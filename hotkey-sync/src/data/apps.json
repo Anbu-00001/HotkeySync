@@ -1,0 +1,162 @@
+[
+  {
+    "id": "google-chrome",
+    "name": "Google Chrome",
+    "exeName": "chrome.exe",
+    "bundleId": "com.google.Chrome",
+    "category": "Browsers",
+    "icon": "🌐"
+  },
+  {
+    "id": "mozilla-firefox",
+    "name": "Mozilla Firefox",
+    "exeName": "firefox.exe",
+    "bundleId": "org.mozilla.firefox",
+    "category": "Browsers",
+    "icon": "🦊"
+  },
+  {
+    "id": "microsoft-edge",
+    "name": "Microsoft Edge",
+    "exeName": "msedge.exe",
+    "bundleId": "com.microsoft.edgemac",
+    "category": "Browsers",
+    "icon": "🔵"
+  },
+  {
+    "id": "vs-code",
+    "name": "VS Code",
+    "exeName": "Code.exe",
+    "bundleId": "com.microsoft.VSCode",
+    "category": "Editors",
+    "icon": "💻"
+  },
+  {
+    "id": "sublime-text",
+    "name": "Sublime Text",
+    "exeName": "sublime_text.exe",
+    "bundleId": "com.sublimetext.4",
+    "category": "Editors",
+    "icon": "📝"
+  },
+  {
+    "id": "cursor",
+    "name": "Cursor",
+    "exeName": "Cursor.exe",
+    "bundleId": "com.todesktop.230313mzl4w4u92",
+    "category": "Editors",
+    "icon": "🖱️"
+  },
+  {
+    "id": "notion",
+    "name": "Notion",
+    "exeName": "Notion.exe",
+    "bundleId": "notion.id",
+    "category": "Productivity",
+    "icon": "📋"
+  },
+  {
+    "id": "obsidian",
+    "name": "Obsidian",
+    "exeName": "Obsidian.exe",
+    "bundleId": "md.obsidian",
+    "category": "Productivity",
+    "icon": "🔮"
+  },
+  {
+    "id": "microsoft-excel",
+    "name": "Microsoft Excel",
+    "exeName": "EXCEL.EXE",
+    "bundleId": "com.microsoft.Excel",
+    "category": "Productivity",
+    "icon": "📊"
+  },
+  {
+    "id": "microsoft-word",
+    "name": "Microsoft Word",
+    "exeName": "WINWORD.EXE",
+    "bundleId": "com.microsoft.Word",
+    "category": "Productivity",
+    "icon": "📄"
+  },
+  {
+    "id": "microsoft-powerpoint",
+    "name": "Microsoft PowerPoint",
+    "exeName": "POWERPNT.EXE",
+    "bundleId": "com.microsoft.Powerpoint",
+    "category": "Productivity",
+    "icon": "📑"
+  },
+  {
+    "id": "slack",
+    "name": "Slack",
+    "exeName": "slack.exe",
+    "bundleId": "com.tinyspeck.slackmacgap",
+    "category": "Communication",
+    "icon": "💬"
+  },
+  {
+    "id": "discord",
+    "name": "Discord",
+    "exeName": "Discord.exe",
+    "bundleId": "com.hnc.Discord",
+    "category": "Communication",
+    "icon": "🎮"
+  },
+  {
+    "id": "zoom",
+    "name": "Zoom",
+    "exeName": "Zoom.exe",
+    "bundleId": "us.zoom.xos",
+    "category": "Communication",
+    "icon": "📹"
+  },
+  {
+    "id": "microsoft-teams",
+    "name": "Microsoft Teams",
+    "exeName": "ms-teams.exe",
+    "bundleId": "com.microsoft.teams2",
+    "category": "Communication",
+    "icon": "👥"
+  },
+  {
+    "id": "spotify",
+    "name": "Spotify",
+    "exeName": "Spotify.exe",
+    "bundleId": "com.spotify.client",
+    "category": "Media",
+    "icon": "🎵"
+  },
+  {
+    "id": "vlc",
+    "name": "VLC",
+    "exeName": "vlc.exe",
+    "bundleId": "org.videolan.vlc",
+    "category": "Media",
+    "icon": "🎬"
+  },
+  {
+    "id": "figma",
+    "name": "Figma",
+    "exeName": "Figma.exe",
+    "bundleId": "com.figma.Desktop",
+    "category": "Media",
+    "icon": "🎨"
+  },
+  {
+    "id": "linear",
+    "name": "Linear",
+    "exeName": "Linear.exe",
+    "bundleId": "com.linear",
+    "category": "Media",
+    "icon": "📐"
+  },
+  {
+    "id": "warp",
+    "name": "Warp",
+    "exeName": "warp.exe",
+    "bundleId": "dev.warp.Warp-Stable",
+    "category": "Media",
+    "icon": "⚡"
+  }
+]
