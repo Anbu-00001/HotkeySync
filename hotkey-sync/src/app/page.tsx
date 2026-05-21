@@ -8,10 +8,13 @@ import { AppPicker } from '@/components/app-picker';
 import { RuleSection } from '@/components/rule-section';
 import { PresetsPanel } from '@/components/presets-panel';
 import { MiniPreview } from '@/components/mini-preview';
+import { CodePreview } from '@/components/code-preview';
+import { DownloadPanel } from '@/components/download-panel';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
@@ -23,9 +26,10 @@ const SECTION_IDS = [
   'section-apps',
   'section-rules',
   'section-presets',
+  'section-preview',
 ] as const;
 
-type ActiveStep = 1 | 2 | 3 | 4;
+type ActiveStep = 1 | 2 | 3 | 4 | 5;
 
 function useActiveStep(): ActiveStep {
   const [activeStep, setActiveStep] = React.useState<ActiveStep>(1);
@@ -119,6 +123,12 @@ export default function HomePage(): React.JSX.Element {
             <h2 className="text-xl font-semibold mb-3">4 — Presets</h2>
             <PresetsPanel />
           </section>
+
+          <section id="section-preview" className="scroll-mt-20 space-y-4">
+            <h2 className="text-xl font-semibold">5 — Preview &amp; Download</h2>
+            <CodePreview />
+            <DownloadPanel />
+          </section>
         </main>
 
         <aside className="hidden xl:block w-[320px] shrink-0 sticky top-[57px] self-start max-h-[calc(100vh-57px-1.5rem)] overflow-hidden rounded-lg border bg-card p-4">
@@ -131,7 +141,7 @@ export default function HomePage(): React.JSX.Element {
           <Button
             variant="default"
             size="icon"
-            aria-label="Open rules preview"
+            aria-label="View rules and preview"
             className="xl:hidden fixed bottom-4 right-4 z-40 h-12 w-12 rounded-full shadow-lg"
           >
             <PanelRightOpen className="h-5 w-5" />
@@ -140,6 +150,9 @@ export default function HomePage(): React.JSX.Element {
         <SheetContent side="right" className="w-[340px] sm:max-w-[340px]">
           <SheetHeader>
             <SheetTitle>Your rules</SheetTitle>
+            <SheetDescription>
+              Quick summary of the rules in your current configuration.
+            </SheetDescription>
           </SheetHeader>
           <div className="mt-4 h-[calc(100%-2.5rem)]">
             <MiniPreview />

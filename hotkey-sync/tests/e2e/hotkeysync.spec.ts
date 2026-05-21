@@ -92,7 +92,7 @@ test.describe('HotkeySync end-to-end', () => {
 
     await expect(page.getByRole('list', { name: 'Progress' })).toBeHidden();
 
-    const sheetButton = page.getByRole('button', { name: 'Open rules preview' });
+    const sheetButton = page.getByRole('button', { name: 'View rules and preview' });
     await expect(sheetButton).toBeVisible();
 
     await sheetButton.click();
@@ -101,5 +101,69 @@ test.describe('HotkeySync end-to-end', () => {
     await expect(
       sheet.getByText('Rules you add will appear here.'),
     ).toBeVisible();
+  });
+
+  test('AHK output is valid after applying Standardise Ctrl+P', async ({
+    page,
+  }) => {
+    await page.getByRole('checkbox', { name: /Google Chrome/ }).click();
+    const presetCard = page
+      .locator('div.rounded-lg')
+      .filter({ has: page.getByRole('heading', { name: 'Standardise Ctrl+P' }) });
+    await presetCard.getByRole('button', { name: 'Apply' }).click();
+
+    const codePreview = page
+      .locator('section#section-preview')
+      .getByRole('region', { name: 'Generated AutoHotkey v2 script' });
+
+    // Ensure the Windows tab is active (it is by default with default OS=windows)
+    await page
+      .locator('section#section-preview')
+      .getByRole('tab', { name: 'Windows (.ahk)' })
+      .click();
+
+    await expect(codePreview).toContainText('#Requires AutoHotkey v2.0+');
+    await expect(codePreview).toContainText('ahk_exe chrome.exe');
+    await expect(codePreview).toContainText('^p::');
+  });
+
+  test('Karabiner output contains caps_lock optional and frontmost condition', async ({
+    page,
+  }) => {
+    await page.getByRole('checkbox', { name: /Google Chrome/ }).click();
+    const presetCard = page
+      .locator('div.rounded-lg')
+      .filter({ has: page.getByRole('heading', { name: 'Standardise Ctrl+P' }) });
+    await presetCard.getByRole('button', { name: 'Apply' }).click();
+
+    await page
+      .locator('section#section-preview')
+      .getByRole('tab', { name: 'macOS (.json)' })
+      .click();
+
+    const codePreview = page
+      .locator('section#section-preview')
+      .getByRole('region', { name: 'Generated Karabiner-Elements configuration' });
+
+    await expect(codePreview).toContainText('"type": "basic"');
+    await expect(codePreview).toContainText('"frontmost_application_if"');
+    await expect(codePreview).toContainText('"mandatory"');
+    await expect(codePreview).toContainText('"caps_lock"');
+  });
+
+  test('Download button is disabled with no rules', async ({ page }) => {
+    const downloadBtn = page.getByRole('button', { name: /Download hotkeys\./ });
+    await expect(downloadBtn).toBeDisabled();
+  });
+
+  test('Download button is enabled after adding rules', async ({ page }) => {
+    await page.getByRole('checkbox', { name: /Google Chrome/ }).click();
+    const presetCard = page
+      .locator('div.rounded-lg')
+      .filter({ has: page.getByRole('heading', { name: 'Standardise Ctrl+P' }) });
+    await presetCard.getByRole('button', { name: 'Apply' }).click();
+
+    const downloadBtn = page.getByRole('button', { name: /Download hotkeys\./ });
+    await expect(downloadBtn).toBeEnabled();
   });
 });

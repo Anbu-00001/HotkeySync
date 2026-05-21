@@ -4,12 +4,14 @@ import * as React from 'react';
 import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+export type StepNumber = 1 | 2 | 3 | 4 | 5;
+
 interface StepTrackerProps {
-  activeStep: 1 | 2 | 3 | 4;
+  activeStep: StepNumber;
 }
 
 interface StepDef {
-  num: 1 | 2 | 3 | 4;
+  num: StepNumber;
   label: string;
 }
 
@@ -18,6 +20,7 @@ const STEPS: readonly StepDef[] = [
   { num: 2, label: 'Select Apps' },
   { num: 3, label: 'Define Rules' },
   { num: 4, label: 'Presets' },
+  { num: 5, label: 'Preview & Download' },
 ] as const;
 
 export function StepTracker({ activeStep }: StepTrackerProps): React.JSX.Element {
