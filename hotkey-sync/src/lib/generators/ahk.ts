@@ -40,6 +40,36 @@ function isoDateOnly(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * Polling-based tap-vs-hold helper injected once per file when any tap_hold
+ * rule exists. AHK has no native to_if_alone — this emulates it.
+ *
+ * Caveat baked into the comment for the eventual user: this can mis-fire on
+ * fast typing rolls. The Karabiner side uses a native primitive and doesn't
+ * have this caveat. The UI surfaces this disclosure too.
+ *
+ * Generated as a string constant so the Vitest tests can assert verbatim.
+ */
+export const AHK_TAP_HOLD_HELPER = [
+  '; HotkeySync tap-hold helper. Polls trigger key every 10ms during the timeout',
+  '; window. Note: AHK has no native tap-vs-hold; fast typing rolls may mis-fire.',
+  '; For high-frequency keys, prefer a basic remap.',
+  'TapHoldAction(timeoutMs, tapAction, holdAction) {',
+  '  pureKey := RegExReplace(A_ThisHotkey, "^[\\^!+#<>*~$]+", "")',
+  '  endTime := A_TickCount + timeoutMs',
+  '  while (A_TickCount < endTime) {',
+  '    if !GetKeyState(pureKey, "P") {',
+  '      SendInput(tapAction)',
+  '      return',
+  '    }',
+  '    Sleep(10)',
+  '  }',
+  '  SendInput(holdAction)',
+  '  KeyWait(pureKey)',
+  '}',
+  '',
+].join('\n');
+
 export function generateAHK(config: Config): string {
   const grouped = groupRulesByAppId(config.rules);
   const uniqueAppCount = grouped.size;
@@ -58,6 +88,11 @@ export function generateAHK(config: Config): string {
     return [...header, '; No rules configured. Add rules in HotkeySync and regenerate.', ''].join('\n');
   }
 
+  // Inject the tap-hold helper only when needed. Keeps output identical to
+  // pre-T2.3 for users who only use basic rules.
+  const hasTapHold = config.rules.some((r) => r.kind === 'tap_hold');
+  const prologue: string[] = hasTapHold ? [AHK_TAP_HOLD_HELPER] : [];
+
   const blocks: string[] = [];
   for (const [appId, appRules] of grouped) {
     const app = getAppById(appId);
@@ -70,6 +105,25 @@ export function generateAHK(config: Config): string {
     blocks.push(`; ═══ ${app.name} ═══`);
     blocks.push(`#HotIf WinActive("ahk_exe ${app.exeName}")`);
     for (const rule of appRules) {
+      if (rule.kind === 'tap_hold') {
+        let triggerStr: string;
+        let tapStr: string;
+        let holdStr: string;
+        try {
+          triggerStr = comboToAHK(parseKeyCombo(rule.trigger));
+          tapStr = comboToAHKSend(parseKeyCombo(rule.tapAction));
+          holdStr = comboToAHKSend(parseKeyCombo(rule.holdAction));
+        } catch {
+          blocks.push(
+            `; Skipped malformed tap_hold rule (trigger="${rule.trigger}", tap="${rule.tapAction}", hold="${rule.holdAction}")`,
+          );
+          continue;
+        }
+        blocks.push(
+          `${triggerStr}:: TapHoldAction(${rule.tapTimeoutMs}, "${tapStr}", "${holdStr}")  ; ${rule.description}`,
+        );
+        continue;
+      }
       let triggerStr: string;
       let actionStr: string;
       try {
@@ -85,5 +139,5 @@ export function generateAHK(config: Config): string {
     blocks.push('');
   }
 
-  return [...header, ...blocks].join('\n');
+  return [...header, ...prologue, ...blocks].join('\n');
 }

@@ -3,7 +3,7 @@ import { detectConflicts } from '@/lib/conflicts';
 import type { HotkeyRule } from '@/types';
 
 function rule(appId: string, trigger: string, description = 'desc'): HotkeyRule {
-  return { appId, trigger, action: 'ctrl+comma', description };
+  return { kind: 'basic', appId, trigger, action: 'ctrl+comma', description };
 }
 
 describe('detectConflicts', () => {

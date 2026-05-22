@@ -28,10 +28,34 @@ export interface KarabinerCondition {
   bundle_identifiers: string[];
 }
 
+/**
+ * Per-manipulator parameter overrides. Used by tap_hold rules to control the
+ * tap timeout vs hold threshold (we set both to the same value).
+ * See https://karabiner-elements.pqrs.org/docs/json/complex-modifications-manipulator-definition/parameters/
+ */
+export interface KarabinerManipulatorParameters {
+  'basic.to_if_alone_timeout_milliseconds'?: number;
+  'basic.to_if_held_down_threshold_milliseconds'?: number;
+}
+
 export interface KarabinerManipulator {
   type: 'basic';
   from: KarabinerFrom;
-  to: KarabinerTo[];
+  /**
+   * Fires immediately while the trigger is held. Omitted for tap_hold rules.
+   * Required for basic remaps.
+   */
+  to?: KarabinerTo[];
+  /**
+   * Fires when the trigger is released and no other input occurred in the
+   * meantime (tap branch of a tap_hold rule).
+   */
+  to_if_alone?: KarabinerTo[];
+  /**
+   * Fires when the trigger has been held past the threshold (hold branch).
+   */
+  to_if_held_down?: KarabinerTo[];
+  parameters?: KarabinerManipulatorParameters;
   conditions: KarabinerCondition[];
 }
 
@@ -93,6 +117,51 @@ export function generateKarabiner(config: Config): KarabinerOutput {
     const bundlePattern = escapeBundleId(app.bundleId);
 
     for (const rule of appRules) {
+      const conditions: KarabinerCondition[] = [
+        {
+          type: 'frontmost_application_if',
+          bundle_identifiers: [bundlePattern],
+        },
+      ];
+
+      if (rule.kind === 'tap_hold') {
+        let trigger: KeyCombo;
+        let tap: KeyCombo;
+        let hold: KeyCombo;
+        try {
+          trigger = parseKeyCombo(rule.trigger);
+          tap = parseKeyCombo(rule.tapAction);
+          hold = parseKeyCombo(rule.holdAction);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown parse error';
+          console.warn(
+            `[karabiner] skipped tap_hold rule for ${appId} (${rule.trigger}): ${message}`,
+          );
+          continue;
+        }
+
+        output.rules.push({
+          description: `${app.name}: ${rule.description}`,
+          manipulators: [
+            {
+              type: 'basic',
+              from: buildKarabinerFrom(trigger),
+              // Note: `to` is intentionally OMITTED. The whole point of
+              // tap_hold is "wait, then choose" — we don't want anything to
+              // fire immediately while held.
+              to_if_alone: [buildKarabinerTo(tap)],
+              to_if_held_down: [buildKarabinerTo(hold)],
+              parameters: {
+                'basic.to_if_alone_timeout_milliseconds': rule.tapTimeoutMs,
+                'basic.to_if_held_down_threshold_milliseconds': rule.tapTimeoutMs,
+              },
+              conditions,
+            },
+          ],
+        });
+        continue;
+      }
+
       let trigger: KeyCombo;
       let action: KeyCombo;
       try {
@@ -114,12 +183,7 @@ export function generateKarabiner(config: Config): KarabinerOutput {
             type: 'basic',
             from: buildKarabinerFrom(trigger),
             to: [buildKarabinerTo(action)],
-            conditions: [
-              {
-                type: 'frontmost_application_if',
-                bundle_identifiers: [bundlePattern],
-              },
-            ],
+            conditions,
           },
         ],
       });

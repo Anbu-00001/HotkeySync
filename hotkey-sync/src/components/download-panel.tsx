@@ -7,18 +7,22 @@ import {
   CheckCircle2,
   ExternalLink,
   CircleDot,
+  ShieldCheck,
+  ShieldAlert,
 } from 'lucide-react';
 import { useConfigStore } from '@/store/useConfigStore';
 import { generateAHK } from '@/lib/generators/ahk';
 import { generateKarabiner } from '@/lib/generators/karabiner';
+import { validateKarabinerOutput } from '@/lib/generators/karabiner-schema';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import type { OS } from '@/types';
+import type { OS, HotkeyRule } from '@/types';
 import { cn } from '@/lib/utils';
+import { ShareButton } from '@/components/share-button';
 
 interface InstructionStep {
   text: React.ReactNode;
@@ -114,7 +118,7 @@ const MAC_STEPS: InstructionStep[] = [
   },
 ];
 
-function downloadForOS(os: OS, rules: { appId: string; trigger: string; action: string; description: string }[]) {
+function downloadForOS(os: OS, rules: HotkeyRule[]) {
   if (os === 'windows') {
     const ahk = generateAHK({ os, rules });
     const blob = new Blob([ahk], { type: 'text/plain;charset=utf-8' });
@@ -139,18 +143,29 @@ export function DownloadPanel(): React.JSX.Element {
     os === 'windows' ? 'How to use your hotkeys.ahk' : 'How to use your hotkeys.json';
   const steps = os === 'windows' ? WINDOWS_STEPS : MAC_STEPS;
 
+  // For macOS, run the strict Karabiner schema validator against the
+  // generated payload before allowing download. Catches any generator drift
+  // before a user installs a broken config.
+  const karabinerValidation = React.useMemo(() => {
+    if (os !== 'mac' || rules.length === 0) return null;
+    return validateKarabinerOutput(generateKarabiner({ os, rules }));
+  }, [os, rules]);
+
   const handleDownload = () => {
     if (disabled) return;
+    if (karabinerValidation && !karabinerValidation.ok) return;
     downloadForOS(os, rules);
     setJustDownloaded(true);
     window.setTimeout(() => setJustDownloaded(false), 2000);
   };
 
+  const validationBlocks = karabinerValidation !== null && !karabinerValidation.ok;
+  const buttonDisabled = disabled || validationBlocks;
   const downloadButton = (
     <Button
       onClick={handleDownload}
-      disabled={disabled}
-      aria-disabled={disabled}
+      disabled={buttonDisabled}
+      aria-disabled={buttonDisabled}
       className={cn(
         'min-w-56 transition-colors',
         justDownloaded && 'border border-green-500',
@@ -173,17 +188,55 @@ export function DownloadPanel(): React.JSX.Element {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        {disabled ? (
+        {buttonDisabled ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <span>{downloadButton}</span>
             </TooltipTrigger>
-            <TooltipContent>Add at least one rule to download.</TooltipContent>
+            <TooltipContent>
+              {disabled
+                ? 'Add at least one rule to download.'
+                : 'Resolve schema validation errors first.'}
+            </TooltipContent>
           </Tooltip>
         ) : (
           downloadButton
         )}
+        <ShareButton />
       </div>
+
+      {karabinerValidation && (
+        <div
+          className={cn(
+            'rounded-md border p-3 text-xs',
+            karabinerValidation.ok
+              ? 'border-green-500/40 bg-green-500/5 text-green-700 dark:text-green-400'
+              : 'border-destructive/50 bg-destructive/5 text-destructive',
+          )}
+        >
+          {karabinerValidation.ok ? (
+            <p className="flex items-center gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Karabiner JSON passes strict schema validation.
+            </p>
+          ) : (
+            <div>
+              <p className="flex items-center gap-1.5 font-medium">
+                <ShieldAlert className="h-3.5 w-3.5" />
+                Generated Karabiner JSON FAILS schema validation. Download
+                blocked.
+              </p>
+              <ul className="mt-1 list-disc pl-5">
+                {karabinerValidation.errors.slice(0, 5).map((e, i) => (
+                  <li key={i}>
+                    <span className="font-mono">{e.path || '(root)'}</span> — {e.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="rounded-lg border bg-card p-5">
         <h3 className="text-base font-semibold mb-3">{heading}</h3>

@@ -10,6 +10,10 @@ import { PresetsPanel } from '@/components/presets-panel';
 import { MiniPreview } from '@/components/mini-preview';
 import { CodePreview } from '@/components/code-preview';
 import { DownloadPanel } from '@/components/download-panel';
+import { ImportPanel } from '@/components/import-panel';
+import { KeyboardSimulator } from '@/components/keyboard-simulator';
+import { ConflictMatrixPanel } from '@/components/conflict-matrix-panel';
+import { useURLConfigImport } from '@/lib/use-url-config-import';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -27,9 +31,10 @@ const SECTION_IDS = [
   'section-rules',
   'section-presets',
   'section-preview',
+  'section-power',
 ] as const;
 
-type ActiveStep = 1 | 2 | 3 | 4 | 5;
+type ActiveStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 function useActiveStep(): ActiveStep {
   const [activeStep, setActiveStep] = React.useState<ActiveStep>(1);
@@ -72,9 +77,27 @@ export default function HomePage(): React.JSX.Element {
   const selectedCount = useConfigStore((s) => s.selectedAppIds.length);
   const ruleCount = useConfigStore((s) => s.rules.length);
   const [sheetOpen, setSheetOpen] = React.useState(false);
+  const urlImportStatus = useURLConfigImport();
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
+      {urlImportStatus.kind === 'applied' && (
+        <div
+          className="bg-primary/10 text-foreground text-xs py-2 px-4 text-center border-b"
+          role="status"
+        >
+          Loaded shared config: <strong>{urlImportStatus.ruleCount}</strong> rule
+          {urlImportStatus.ruleCount === 1 ? '' : 's'} applied from the URL.
+        </div>
+      )}
+      {urlImportStatus.kind === 'failed' && (
+        <div
+          className="bg-destructive/10 text-destructive text-xs py-2 px-4 text-center border-b"
+          role="alert"
+        >
+          Could not load shared config from URL: {urlImportStatus.reason}
+        </div>
+      )}
       <header className="sticky top-0 z-30 flex items-center justify-between border-b bg-background/80 backdrop-blur px-4 sm:px-8 py-3">
         <div className="flex items-center gap-2">
           <Keyboard className="h-5 w-5 text-primary" />
@@ -128,6 +151,17 @@ export default function HomePage(): React.JSX.Element {
             <h2 className="text-xl font-semibold">5 — Preview &amp; Download</h2>
             <CodePreview />
             <DownloadPanel />
+          </section>
+
+          <section id="section-power" className="scroll-mt-20 space-y-4">
+            <h2 className="text-xl font-semibold">6 — Power Tools</h2>
+            <p className="text-sm text-muted-foreground">
+              Import an existing config, see exactly what your rules would do
+              before you install anything, and audit cross-app conflicts.
+            </p>
+            <ImportPanel />
+            <KeyboardSimulator />
+            <ConflictMatrixPanel />
           </section>
         </main>
 

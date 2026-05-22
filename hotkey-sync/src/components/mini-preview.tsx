@@ -64,7 +64,14 @@ export function MiniPreview(): React.JSX.Element {
                             className="h-3 w-3 text-muted-foreground"
                             aria-hidden="true"
                           />
-                          <KeyBadge combo={r.action} size="sm" />
+                          {r.kind === 'basic' ? (
+                            <KeyBadge combo={r.action} size="sm" />
+                          ) : (
+                            <span className="inline-flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+                              <span>tap: <KeyBadge combo={r.tapAction} size="sm" /></span>
+                              <span>hold: <KeyBadge combo={r.holdAction} size="sm" /></span>
+                            </span>
+                          )}
                         </div>
                         {r.description && (
                           <p className="mt-1 text-[11px] text-muted-foreground">

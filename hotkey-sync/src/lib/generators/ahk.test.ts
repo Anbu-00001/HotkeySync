@@ -12,7 +12,7 @@ function rule(
   action: string,
   description = 'desc',
 ): HotkeyRule {
-  return { appId, trigger, action, description };
+  return { kind: 'basic', appId, trigger, action, description };
 }
 
 describe('generateAHK — empty config', () => {
@@ -177,6 +177,115 @@ describe('generateAHK — modifier combinations', () => {
 
   it('meta+p (Win key) → #p::', () => {
     expect(trigger('meta+p')).toMatch(/^#p::/m);
+  });
+});
+
+describe('generateAHK — tap_hold rules', () => {
+  const tapHold = (
+    appId: string,
+    trigger: string,
+    tapAction: string,
+    holdAction: string,
+    tapTimeoutMs = 200,
+    description = 'tap-hold',
+  ): HotkeyRule => ({
+    kind: 'tap_hold',
+    appId,
+    trigger,
+    tapAction,
+    holdAction,
+    tapTimeoutMs,
+    description,
+  });
+
+  it('injects the TapHoldAction helper iff any tap_hold rule exists', () => {
+    const withTH = generateAHK(
+      makeConfig([tapHold('vs-code', 'meta+grave_accent', 'escape', 'ctrl+grave_accent')]),
+    );
+    expect(withTH).toContain('TapHoldAction(timeoutMs, tapAction, holdAction)');
+    expect(withTH).toContain('while (A_TickCount < endTime)');
+
+    const withoutTH = generateAHK(
+      makeConfig([rule('google-chrome', 'ctrl+p', 'ctrl+comma')]),
+    );
+    expect(withoutTH).not.toContain('TapHoldAction');
+  });
+
+  it('injects the helper exactly once even with many tap_hold rules', () => {
+    const out = generateAHK(
+      makeConfig([
+        tapHold('vs-code', 'meta+grave_accent', 'escape', 'ctrl+grave_accent'),
+        tapHold('google-chrome', 'meta+1', 'f1', 'ctrl+1'),
+        tapHold('slack', 'meta+2', 'f2', 'ctrl+2'),
+      ]),
+    );
+    const occurrences = (out.match(/TapHoldAction\(timeoutMs/g) ?? []).length;
+    expect(occurrences).toBe(1);
+  });
+
+  it('per-rule line uses TapHoldAction with ms, tap, hold args', () => {
+    const out = generateAHK(
+      makeConfig([
+        tapHold('google-chrome', 'ctrl+p', 'ctrl+comma', 'ctrl+shift+w', 250, 'dual'),
+      ]),
+    );
+    expect(out).toContain('^p:: TapHoldAction(250, "^,", "^+w")  ; dual');
+  });
+
+  it('tap_hold action with special key uses braced send syntax', () => {
+    const out = generateAHK(
+      makeConfig([tapHold('vs-code', 'meta+grave_accent', 'escape', 'ctrl+grave_accent')]),
+    );
+    expect(out).toContain('TapHoldAction(200, "{Escape}", "^`")');
+  });
+
+  it('tap_hold lives inside the per-app #HotIf block', () => {
+    const out = generateAHK(
+      makeConfig([
+        tapHold('vs-code', 'meta+grave_accent', 'escape', 'ctrl+grave_accent'),
+      ]),
+    );
+    // Helper appears BEFORE any #HotIf block; per-rule call lives INSIDE one
+    const helperIdx = out.indexOf('TapHoldAction(timeoutMs');
+    const hotIfIdx = out.indexOf('#HotIf WinActive("ahk_exe Code.exe")');
+    const ruleIdx = out.indexOf('TapHoldAction(200,');
+    expect(helperIdx).toBeLessThan(hotIfIdx);
+    expect(hotIfIdx).toBeLessThan(ruleIdx);
+  });
+
+  it('mixed basic + tap_hold rules produce both line styles in one file', () => {
+    const out = generateAHK(
+      makeConfig([
+        rule('google-chrome', 'ctrl+p', 'ctrl+comma', 'basic prefs'),
+        tapHold('vs-code', 'meta+grave_accent', 'escape', 'ctrl+grave_accent'),
+      ]),
+    );
+    expect(out).toContain('^p:: Send("^,")');
+    expect(out).toContain('TapHoldAction(200, "{Escape}", "^`")');
+  });
+
+  it('output still ends with a newline', () => {
+    const out = generateAHK(
+      makeConfig([tapHold('vs-code', 'meta+grave_accent', 'escape', 'ctrl+grave_accent')]),
+    );
+    expect(out.endsWith('\n')).toBe(true);
+  });
+
+  it('tap_hold with malformed combos is skipped with a comment, never thrown', () => {
+    const out = generateAHK(
+      makeConfig([
+        {
+          kind: 'tap_hold',
+          appId: 'vs-code',
+          trigger: 'ctrl+nope',
+          tapAction: 'escape',
+          holdAction: 'ctrl+grave_accent',
+          tapTimeoutMs: 200,
+          description: 'bad',
+        },
+      ]),
+    );
+    expect(out).toContain('; Skipped malformed tap_hold rule');
   });
 });
 

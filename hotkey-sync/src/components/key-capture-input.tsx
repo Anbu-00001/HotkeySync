@@ -8,7 +8,7 @@ import {
   type Modifier,
   type TriggerKey,
 } from '@/lib/keys';
-import { hotkeyRuleSchema } from '@/lib/schemas';
+import { keyComboSchema } from '@/lib/schemas';
 import { KeyBadge } from '@/components/key-badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -86,7 +86,7 @@ export function KeyCaptureInput({
 
   const finalize = React.useCallback(
     (capturedRaw: string): boolean => {
-      const result = hotkeyRuleSchema.shape.trigger.safeParse(capturedRaw);
+      const result = keyComboSchema.safeParse(capturedRaw);
       if (!result.success) {
         const message = result.error.issues[0]?.message ?? 'Invalid key combo';
         onValidationError(message);

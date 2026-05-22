@@ -12,7 +12,7 @@ function rule(
   action: string,
   description = 'desc',
 ): HotkeyRule {
-  return { appId, trigger, action, description };
+  return { kind: 'basic', appId, trigger, action, description };
 }
 
 describe('generateKarabiner — empty config', () => {
@@ -55,11 +55,11 @@ describe('generateKarabiner — single rule', () => {
   });
 
   it('maps action key to to[0].key_code', () => {
-    expect(out.rules[0].manipulators[0].to[0].key_code).toBe('comma');
+    expect(out.rules[0].manipulators[0].to?.[0].key_code).toBe('comma');
   });
 
   it('puts left_control in to[0].modifiers', () => {
-    expect(out.rules[0].manipulators[0].to[0].modifiers).toContain('left_control');
+    expect(out.rules[0].manipulators[0].to?.[0].modifiers).toContain('left_control');
   });
 
   it('sets condition type to frontmost_application_if', () => {
@@ -103,14 +103,14 @@ describe('generateKarabiner — to.modifiers is a flat array', () => {
     const out = generateKarabiner(
       makeConfig([rule('google-chrome', 'ctrl+p', 'ctrl+comma')]),
     );
-    expect(Array.isArray(out.rules[0].manipulators[0].to[0].modifiers)).toBe(true);
+    expect(Array.isArray(out.rules[0].manipulators[0].to?.[0].modifiers)).toBe(true);
   });
 
   it('emits all action modifiers using left_ prefixed names', () => {
     const out = generateKarabiner(
       makeConfig([rule('google-chrome', 'ctrl+p', 'ctrl+shift+p')]),
     );
-    const mods = out.rules[0].manipulators[0].to[0].modifiers;
+    const mods = out.rules[0].manipulators[0].to?.[0].modifiers;
     expect(mods).toContain('left_control');
     expect(mods).toContain('left_shift');
   });
@@ -119,7 +119,7 @@ describe('generateKarabiner — to.modifiers is a flat array', () => {
     const out = generateKarabiner(
       makeConfig([rule('google-chrome', 'ctrl+p', 'escape')]),
     );
-    expect(out.rules[0].manipulators[0].to[0].modifiers).toBeUndefined();
+    expect(out.rules[0].manipulators[0].to?.[0].modifiers).toBeUndefined();
   });
 });
 
@@ -186,7 +186,7 @@ describe('generateKarabiner — special keys', () => {
     const out = generateKarabiner(
       makeConfig([rule('google-chrome', 'ctrl+k', 'up_arrow')]),
     );
-    expect(out.rules[0].manipulators[0].to[0].key_code).toBe('up_arrow');
+    expect(out.rules[0].manipulators[0].to?.[0].key_code).toBe('up_arrow');
   });
 
   it('trigger f1 → from.key_code "f1"', () => {
@@ -200,14 +200,114 @@ describe('generateKarabiner — special keys', () => {
     const out = generateKarabiner(
       makeConfig([rule('google-chrome', 'ctrl+k', 'return_or_enter')]),
     );
-    expect(out.rules[0].manipulators[0].to[0].key_code).toBe('return_or_enter');
+    expect(out.rules[0].manipulators[0].to?.[0].key_code).toBe('return_or_enter');
   });
 
   it('action meta+p → to[0].modifiers contains "left_command"', () => {
     const out = generateKarabiner(
       makeConfig([rule('google-chrome', 'ctrl+k', 'meta+p')]),
     );
-    expect(out.rules[0].manipulators[0].to[0].modifiers).toContain('left_command');
+    expect(out.rules[0].manipulators[0].to?.[0].modifiers).toContain('left_command');
+  });
+});
+
+describe('generateKarabiner — tap_hold rules', () => {
+  const tapHold = (
+    appId: string,
+    trigger: string,
+    tapAction: string,
+    holdAction: string,
+    tapTimeoutMs = 200,
+    description = 'tap-hold',
+  ): HotkeyRule => ({
+    kind: 'tap_hold',
+    appId,
+    trigger,
+    tapAction,
+    holdAction,
+    tapTimeoutMs,
+    description,
+  });
+
+  it('emits to_if_alone + to_if_held_down (and OMITS `to`)', () => {
+    const out = generateKarabiner(
+      makeConfig([tapHold('google-chrome', 'ctrl+p', 'ctrl+comma', 'ctrl+shift+w')]),
+    );
+    const m = out.rules[0].manipulators[0];
+    expect(m.to).toBeUndefined();
+    expect(m.to_if_alone).toEqual([
+      { key_code: 'comma', modifiers: ['left_control'] },
+    ]);
+    expect(m.to_if_held_down).toEqual([
+      { key_code: 'w', modifiers: ['left_control', 'left_shift'] },
+    ]);
+  });
+
+  it('writes both timing parameters from tapTimeoutMs', () => {
+    const out = generateKarabiner(
+      makeConfig([tapHold('google-chrome', 'ctrl+p', 'ctrl+comma', 'ctrl+shift+w', 250)]),
+    );
+    const m = out.rules[0].manipulators[0];
+    expect(m.parameters).toEqual({
+      'basic.to_if_alone_timeout_milliseconds': 250,
+      'basic.to_if_held_down_threshold_milliseconds': 250,
+    });
+  });
+
+  it('preserves caps_lock optional on tap_hold from.modifiers', () => {
+    const out = generateKarabiner(
+      makeConfig([tapHold('google-chrome', 'ctrl+p', 'ctrl+comma', 'ctrl+shift+w')]),
+    );
+    const m = out.rules[0].manipulators[0];
+    expect(m.from.modifiers?.optional).toContain('caps_lock');
+    expect(m.from.modifiers?.mandatory).toContain('control');
+  });
+
+  it('preserves the per-app frontmost condition', () => {
+    const out = generateKarabiner(
+      makeConfig([tapHold('vs-code', 'meta+grave_accent', 'escape', 'ctrl+grave_accent')]),
+    );
+    const m = out.rules[0].manipulators[0];
+    expect(m.conditions[0].type).toBe('frontmost_application_if');
+    expect(m.conditions[0].bundle_identifiers[0]).toBe('^com\\.microsoft\\.VSCode$');
+  });
+
+  it('description includes app name prefix like basic rules', () => {
+    const out = generateKarabiner(
+      makeConfig([tapHold('vs-code', 'meta+grave_accent', 'escape', 'ctrl+grave_accent', 200, 'dual')]),
+    );
+    expect(out.rules[0].description).toBe('VS Code: dual');
+  });
+
+  it('tap_hold trigger with no modifiers still gets caps_lock optional', () => {
+    const out = generateKarabiner(
+      makeConfig([tapHold('vs-code', 'escape', 'escape', 'ctrl+open_bracket')]),
+    );
+    const m = out.rules[0].manipulators[0];
+    expect(m.from.modifiers?.optional).toEqual(['caps_lock']);
+    expect(m.from.modifiers?.mandatory).toBeUndefined();
+  });
+
+  it('mixed basic + tap_hold config emits one KarabinerRule per HotkeyRule', () => {
+    const out = generateKarabiner(
+      makeConfig([
+        rule('google-chrome', 'ctrl+p', 'ctrl+comma'),
+        tapHold('vs-code', 'meta+grave_accent', 'escape', 'ctrl+grave_accent'),
+      ]),
+    );
+    expect(out.rules).toHaveLength(2);
+    expect(out.rules[0].manipulators[0].to).toBeDefined();
+    expect(out.rules[1].manipulators[0].to).toBeUndefined();
+    expect(out.rules[1].manipulators[0].to_if_alone).toBeDefined();
+  });
+
+  it('tap_hold with no-modifier hold action omits to_if_held_down.modifiers', () => {
+    const out = generateKarabiner(
+      makeConfig([tapHold('vs-code', 'ctrl+p', 'ctrl+comma', 'escape')]),
+    );
+    expect(out.rules[0].manipulators[0].to_if_held_down?.[0]).toEqual({
+      key_code: 'escape',
+    });
   });
 });
 
