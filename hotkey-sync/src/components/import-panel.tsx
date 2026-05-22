@@ -1,13 +1,21 @@
 'use client';
 
 import * as React from 'react';
-import { Upload, FileWarning, CheckCircle2, FileCode } from 'lucide-react';
+import {
+  Upload,
+  FileWarning,
+  CheckCircle2,
+  FileCode,
+  Globe,
+  Loader2,
+} from 'lucide-react';
 import { useConfigStore } from '@/store/useConfigStore';
 import { parseAHK, type AHKImportResult } from '@/lib/import/ahk-parser';
 import {
   parseKarabinerJSON,
   type KarabinerImportResult,
 } from '@/lib/import/karabiner-parser';
+import { fetchGalleryURL } from '@/lib/import/gallery-fetch';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
@@ -27,6 +35,13 @@ export function ImportPanel(): React.JSX.Element {
   const [text, setText] = React.useState('');
   const [preview, setPreview] = React.useState<ParsedPreview | null>(null);
   const [parseError, setParseError] = React.useState<string | null>(null);
+  const [galleryURL, setGalleryURL] = React.useState('');
+  const [galleryStatus, setGalleryStatus] = React.useState<
+    | { state: 'idle' }
+    | { state: 'fetching' }
+    | { state: 'error'; message: string }
+    | { state: 'success'; fetchedUrl: string; wasDeepLink: boolean }
+  >({ state: 'idle' });
 
   const handleParse = () => {
     setParseError(null);
@@ -62,6 +77,35 @@ export function ImportPanel(): React.JSX.Element {
       rules: result.rules,
     });
     // Keep the preview visible so the user knows what just got applied.
+  };
+
+  const handleFetchGallery = async () => {
+    setGalleryStatus({ state: 'fetching' });
+    setParseError(null);
+    const outcome = await fetchGalleryURL(galleryURL);
+    if (!outcome.ok) {
+      setGalleryStatus({ state: 'error', message: outcome.error });
+      return;
+    }
+    setGalleryStatus({
+      state: 'success',
+      fetchedUrl: outcome.fetchedUrl,
+      wasDeepLink: outcome.wasDeepLink,
+    });
+    setSource('karabiner');
+    setText(outcome.json);
+    // Auto-parse so the user sees the preview without a second click.
+    const parsed = parseKarabinerJSON(outcome.json);
+    if (!parsed.ok) {
+      setParseError(`${parsed.error.kind}: ${parsed.error.message}`);
+      setPreview(null);
+      return;
+    }
+    setPreview({
+      source: 'karabiner',
+      result: parsed.result,
+      hasRules: parsed.result.rules.length > 0,
+    });
   };
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -101,12 +145,77 @@ export function ImportPanel(): React.JSX.Element {
             blocks containing <code className="font-mono">^p:: Send(&quot;^,&quot;)</code> lines.
           </p>
         </TabsContent>
-        <TabsContent value="karabiner" className="mt-3 space-y-2">
+        <TabsContent value="karabiner" className="mt-3 space-y-3">
           <p className="text-xs text-muted-foreground">
             Standard <code className="font-mono">complex_modifications</code> JSON. Only{' '}
             <code className="font-mono">type: &quot;basic&quot;</code> manipulators with a{' '}
             <code className="font-mono">frontmost_application_if</code> condition are imported.
           </p>
+          <div className="rounded-md border border-dashed bg-muted/20 p-3 space-y-2">
+            <div className="flex items-center gap-2 text-xs font-medium">
+              <Globe className="h-3.5 w-3.5 text-primary" />
+              Import from the Karabiner community gallery
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              Paste a <code className="font-mono">karabiner://…?url=…</code>{' '}
+              deep-link from{' '}
+              <span className="font-mono">ke-complex-modifications.pqrs.org</span>{' '}
+              or a direct{' '}
+              <span className="font-mono">raw.githubusercontent.com</span> JSON URL.
+              We fetch it client-side and run it through the same Karabiner parser.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={galleryURL}
+                onChange={(e) => {
+                  setGalleryURL(e.target.value);
+                  if (galleryStatus.state !== 'idle')
+                    setGalleryStatus({ state: 'idle' });
+                }}
+                spellCheck={false}
+                placeholder="karabiner://… or https://raw.githubusercontent.com/…/foo.json"
+                aria-label="Karabiner gallery URL"
+                className="flex-1 min-w-[260px] rounded-md border bg-background px-3 py-1.5 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <Button
+                onClick={handleFetchGallery}
+                disabled={
+                  galleryStatus.state === 'fetching' ||
+                  galleryURL.trim().length === 0
+                }
+                aria-disabled={
+                  galleryStatus.state === 'fetching' ||
+                  galleryURL.trim().length === 0
+                }
+                variant="secondary"
+                size="sm"
+              >
+                {galleryStatus.state === 'fetching' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Globe className="h-4 w-4" />
+                )}
+                Fetch
+              </Button>
+            </div>
+            {galleryStatus.state === 'error' && (
+              <p className="text-[11px] text-destructive">
+                {galleryStatus.message}
+              </p>
+            )}
+            {galleryStatus.state === 'success' && (
+              <p className="text-[11px] text-green-700 dark:text-green-400">
+                Fetched{' '}
+                <span className="font-mono break-all">
+                  {galleryStatus.fetchedUrl}
+                </span>
+                {galleryStatus.wasDeepLink &&
+                  ' (extracted from karabiner:// deep-link)'}
+                . Preview below.
+              </p>
+            )}
+          </div>
         </TabsContent>
       </Tabs>
 

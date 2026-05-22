@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Copy, Check, AlertCircle, FileCode2 } from 'lucide-react';
-import { createHighlighter, type Highlighter } from 'shiki';
+import type { Highlighter } from 'shiki';
 import { useConfigStore } from '@/store/useConfigStore';
 import { generateAHK } from '@/lib/generators/ahk';
 import { generateKarabiner } from '@/lib/generators/karabiner';
@@ -25,10 +25,12 @@ const THEMES = ['github-dark', 'github-light'] as const;
 let highlighterPromise: Promise<Highlighter> | null = null;
 function getSharedHighlighter(): Promise<Highlighter> {
   if (!highlighterPromise) {
-    highlighterPromise = createHighlighter({
-      themes: [...THEMES],
-      langs: [...LANGS],
-    });
+    // Dynamic import keeps Shiki (~200KB JS + WASM regex engine) out of the
+    // initial bundle. The preview is below the fold, and renders plain text
+    // until the highlighter resolves — see HighlightedCode's fallback.
+    highlighterPromise = import('shiki').then(({ createHighlighter }) =>
+      createHighlighter({ themes: [...THEMES], langs: [...LANGS] }),
+    );
   }
   return highlighterPromise;
 }

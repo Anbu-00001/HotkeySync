@@ -19,7 +19,7 @@ const STEPS: readonly StepDef[] = [
   { num: 1, label: 'Choose OS' },
   { num: 2, label: 'Select Apps' },
   { num: 3, label: 'Define Rules' },
-  { num: 4, label: 'Presets' },
+  { num: 4, label: 'Presets & Suggestions' },
   { num: 5, label: 'Preview & Download' },
   { num: 6, label: 'Power Tools' },
 ] as const;

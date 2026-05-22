@@ -3,12 +3,32 @@
 import * as React from 'react';
 import { Search, SearchX } from 'lucide-react';
 import appsData from '@/data/apps.json';
-import type { App, AppCategory } from '@/types';
+import type { App, AppCategory, Platform } from '@/types';
 import { useConfigStore } from '@/store/useConfigStore';
 import { AppCard } from '@/components/app-card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+
+/**
+ * Apps without an explicit `platforms` field are treated as cross-platform.
+ * Lets us add `platforms` incrementally without forcing a backfill on the
+ * full catalogue in one commit (the Zod schema in `lib/schemas.ts` enforces
+ * the exeName/bundleId invariant per actual platform listed).
+ */
+function appPlatforms(app: App): readonly Platform[] {
+  return app.platforms ?? ['windows', 'mac'];
+}
+
+/** Lowercased substring match against name, id, category, AND aliases. */
+function appMatchesQuery(app: App, q: string): boolean {
+  if (!q) return true;
+  if (app.name.toLowerCase().includes(q)) return true;
+  if (app.id.toLowerCase().includes(q)) return true;
+  if (app.category.toLowerCase().includes(q)) return true;
+  if (app.aliases?.some((a) => a.toLowerCase().includes(q))) return true;
+  return false;
+}
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,6 +52,7 @@ const CATEGORIES: readonly AppCategory[] = [
 type CategoryFilter = 'All' | AppCategory;
 
 export function AppPicker(): React.JSX.Element {
+  const os = useConfigStore((s) => s.os);
   const selectedAppIds = useConfigStore((s) => s.selectedAppIds);
   const rules = useConfigStore((s) => s.rules);
   const toggleAppSelection = useConfigStore((s) => s.toggleAppSelection);
@@ -47,18 +68,21 @@ export function AppPicker(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [rawQuery]);
 
+  // Apps available on the currently-selected OS. Computed independently of
+  // category/query so the "X of Y apps selected" counter reflects this OS,
+  // not the full multi-platform catalogue.
+  const appsForOS = React.useMemo(
+    () => APPS.filter((app) => appPlatforms(app).includes(os)),
+    [os],
+  );
+
   const filtered = React.useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase();
-    return APPS.filter((app) => {
+    return appsForOS.filter((app) => {
       if (category !== 'All' && app.category !== category) return false;
-      if (!q) return true;
-      return (
-        app.name.toLowerCase().includes(q) ||
-        app.id.toLowerCase().includes(q) ||
-        app.category.toLowerCase().includes(q)
-      );
+      return appMatchesQuery(app, q);
     });
-  }, [debouncedQuery, category]);
+  }, [appsForOS, debouncedQuery, category]);
 
   const handleClearAll = () => {
     if (rules.length > 0) {
@@ -124,7 +148,7 @@ export function AppPicker(): React.JSX.Element {
               : 'text-sm font-medium'
           }
         >
-          {selectedAppIds.length} of {APPS.length} apps selected
+          {selectedAppIds.length} of {appsForOS.length} apps selected
         </p>
         {selectedAppIds.length > 0 && (
           <Button variant="ghost" size="sm" onClick={handleClearAll}>

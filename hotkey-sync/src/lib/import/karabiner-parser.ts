@@ -28,7 +28,9 @@ import {
 const APPS = appsData as App[];
 
 const BUNDLE_LOOKUP = new Map<string, string>(
-  APPS.map((a) => [a.bundleId.toLowerCase(), a.id]),
+  APPS.filter((a): a is App & { bundleId: string } => Boolean(a.bundleId)).map(
+    (a) => [a.bundleId.toLowerCase(), a.id],
+  ),
 );
 
 // Build inverse KARABINER_KEY_MAP: Karabiner key_code → TriggerKey.

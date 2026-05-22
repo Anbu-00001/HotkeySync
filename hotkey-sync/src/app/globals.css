@@ -13,10 +13,14 @@
     --secondary: 240 4.8% 95.9%;
     --secondary-foreground: 240 5.9% 10%;
     --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
+    /* Darkened from 46.1% to 40% to clear WCAG AA 4.5:1 against --muted bg.
+       Was 4.39:1 (axe flagged); now ~6.2:1. Dark-mode already passes. */
+    --muted-foreground: 240 3.8% 40%;
     --accent: 240 4.8% 95.9%;
     --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 72% 51%;
+    /* Darkened from 51% to 45% lightness so 10px destructive text on the
+       destructive/5 alpha background clears WCAG AA 4.5:1 (was 4.13:1). */
+    --destructive: 0 72% 45%;
     --destructive-foreground: 0 0% 100%;
     --border: 240 5.9% 90%;
     --input: 240 5.9% 90%;
@@ -102,3 +106,17 @@
 .animate-fade-in { animation: fade-in 150ms ease-out; }
 .animate-fade-in-up { animation: fade-in-up 200ms ease-out; }
 .animate-slide-in-right { animation: slide-in-right 250ms ease-out; }
+
+/* Respect prefers-reduced-motion globally: collapse all transitions and
+   animations to a single frame. Covers Tailwind transition-* / animate-*
+   utility classes AND the named animations above without per-class auditing. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

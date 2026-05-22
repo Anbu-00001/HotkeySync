@@ -5,7 +5,9 @@
     "exeName": "chrome.exe",
     "bundleId": "com.google.Chrome",
     "category": "Browsers",
-    "icon": "🌐"
+    "icon": "🌐",
+    "platforms": ["windows", "mac"],
+    "aliases": ["chrome", "google"]
   },
   {
     "id": "mozilla-firefox",
@@ -13,7 +15,9 @@
     "exeName": "firefox.exe",
     "bundleId": "org.mozilla.firefox",
     "category": "Browsers",
-    "icon": "🦊"
+    "icon": "🦊",
+    "platforms": ["windows", "mac"],
+    "aliases": ["firefox", "ff"]
   },
   {
     "id": "microsoft-edge",
@@ -21,7 +25,9 @@
     "exeName": "msedge.exe",
     "bundleId": "com.microsoft.edgemac",
     "category": "Browsers",
-    "icon": "🔵"
+    "icon": "🔵",
+    "platforms": ["windows", "mac"],
+    "aliases": ["edge"]
   },
   {
     "id": "vs-code",
@@ -29,7 +35,9 @@
     "exeName": "Code.exe",
     "bundleId": "com.microsoft.VSCode",
     "category": "Editors",
-    "icon": "💻"
+    "icon": "💻",
+    "platforms": ["windows", "mac"],
+    "aliases": ["vscode", "visual studio code", "code"]
   },
   {
     "id": "sublime-text",
@@ -37,7 +45,9 @@
     "exeName": "sublime_text.exe",
     "bundleId": "com.sublimetext.4",
     "category": "Editors",
-    "icon": "📝"
+    "icon": "📝",
+    "platforms": ["windows", "mac"],
+    "aliases": ["sublime"]
   },
   {
     "id": "cursor",
@@ -45,7 +55,8 @@
     "exeName": "Cursor.exe",
     "bundleId": "com.todesktop.230313mzl4w4u92",
     "category": "Editors",
-    "icon": "🖱️"
+    "icon": "🖱️",
+    "platforms": ["windows", "mac"]
   },
   {
     "id": "notion",
@@ -53,7 +64,8 @@
     "exeName": "Notion.exe",
     "bundleId": "notion.id",
     "category": "Productivity",
-    "icon": "📋"
+    "icon": "📋",
+    "platforms": ["windows", "mac"]
   },
   {
     "id": "obsidian",
@@ -61,7 +73,8 @@
     "exeName": "Obsidian.exe",
     "bundleId": "md.obsidian",
     "category": "Productivity",
-    "icon": "🔮"
+    "icon": "🔮",
+    "platforms": ["windows", "mac"]
   },
   {
     "id": "microsoft-excel",
@@ -69,7 +82,9 @@
     "exeName": "EXCEL.EXE",
     "bundleId": "com.microsoft.Excel",
     "category": "Productivity",
-    "icon": "📊"
+    "icon": "📊",
+    "platforms": ["windows", "mac"],
+    "aliases": ["excel"]
   },
   {
     "id": "microsoft-word",
@@ -77,7 +92,9 @@
     "exeName": "WINWORD.EXE",
     "bundleId": "com.microsoft.Word",
     "category": "Productivity",
-    "icon": "📄"
+    "icon": "📄",
+    "platforms": ["windows", "mac"],
+    "aliases": ["word"]
   },
   {
     "id": "microsoft-powerpoint",
@@ -85,7 +102,9 @@
     "exeName": "POWERPNT.EXE",
     "bundleId": "com.microsoft.Powerpoint",
     "category": "Productivity",
-    "icon": "📑"
+    "icon": "📑",
+    "platforms": ["windows", "mac"],
+    "aliases": ["powerpoint", "ppt"]
   },
   {
     "id": "slack",
@@ -93,7 +112,8 @@
     "exeName": "slack.exe",
     "bundleId": "com.tinyspeck.slackmacgap",
     "category": "Communication",
-    "icon": "💬"
+    "icon": "💬",
+    "platforms": ["windows", "mac"]
   },
   {
     "id": "discord",
@@ -101,7 +121,8 @@
     "exeName": "Discord.exe",
     "bundleId": "com.hnc.Discord",
     "category": "Communication",
-    "icon": "🎮"
+    "icon": "🎮",
+    "platforms": ["windows", "mac"]
   },
   {
     "id": "zoom",
@@ -117,7 +138,9 @@
     "exeName": "ms-teams.exe",
     "bundleId": "com.microsoft.teams2",
     "category": "Communication",
-    "icon": "👥"
+    "icon": "👥",
+    "platforms": ["windows", "mac"],
+    "aliases": ["teams", "msteams"]
   },
   {
     "id": "spotify",
@@ -125,7 +148,8 @@
     "exeName": "Spotify.exe",
     "bundleId": "com.spotify.client",
     "category": "Media",
-    "icon": "🎵"
+    "icon": "🎵",
+    "platforms": ["windows", "mac"]
   },
   {
     "id": "vlc",
@@ -133,7 +157,8 @@
     "exeName": "vlc.exe",
     "bundleId": "org.videolan.vlc",
     "category": "Media",
-    "icon": "🎬"
+    "icon": "🎬",
+    "platforms": ["windows", "mac"]
   },
   {
     "id": "figma",
@@ -141,22 +166,25 @@
     "exeName": "Figma.exe",
     "bundleId": "com.figma.Desktop",
     "category": "Media",
-    "icon": "🎨"
+    "icon": "🎨",
+    "platforms": ["windows", "mac"]
   },
   {
     "id": "linear",
     "name": "Linear",
     "exeName": "Linear.exe",
     "bundleId": "com.linear",
-    "category": "Media",
-    "icon": "📐"
+    "category": "Productivity",
+    "icon": "📐",
+    "platforms": ["windows", "mac"]
   },
   {
     "id": "warp",
     "name": "Warp",
     "exeName": "warp.exe",
     "bundleId": "dev.warp.Warp-Stable",
-    "category": "Media",
-    "icon": "⚡"
+    "category": "Productivity",
+    "icon": "⚡",
+    "platforms": ["windows", "mac"]
   }
 ]

@@ -14,6 +14,7 @@ import { useConfigStore } from '@/store/useConfigStore';
 import { generateAHK } from '@/lib/generators/ahk';
 import { generateKarabiner } from '@/lib/generators/karabiner';
 import { validateKarabinerOutput } from '@/lib/generators/karabiner-schema';
+import { lintAHK } from '@/lib/lint/ahk-lint';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -151,15 +152,23 @@ export function DownloadPanel(): React.JSX.Element {
     return validateKarabinerOutput(generateKarabiner({ os, rules }));
   }, [os, rules]);
 
+  const ahkLint = React.useMemo(() => {
+    if (os !== 'windows' || rules.length === 0) return null;
+    return lintAHK(generateAHK({ os, rules }));
+  }, [os, rules]);
+
   const handleDownload = () => {
     if (disabled) return;
     if (karabinerValidation && !karabinerValidation.ok) return;
+    if (ahkLint && !ahkLint.ok) return;
     downloadForOS(os, rules);
     setJustDownloaded(true);
     window.setTimeout(() => setJustDownloaded(false), 2000);
   };
 
-  const validationBlocks = karabinerValidation !== null && !karabinerValidation.ok;
+  const validationBlocks =
+    (karabinerValidation !== null && !karabinerValidation.ok) ||
+    (ahkLint !== null && !ahkLint.ok);
   const buttonDisabled = disabled || validationBlocks;
   const downloadButton = (
     <Button
@@ -196,7 +205,9 @@ export function DownloadPanel(): React.JSX.Element {
             <TooltipContent>
               {disabled
                 ? 'Add at least one rule to download.'
-                : 'Resolve schema validation errors first.'}
+                : os === 'mac'
+                  ? 'Resolve Karabiner schema validation errors first.'
+                  : 'Resolve AutoHotkey lint errors first.'}
             </TooltipContent>
           </Tooltip>
         ) : (
@@ -232,6 +243,53 @@ export function DownloadPanel(): React.JSX.Element {
                     <span className="font-mono">{e.path || '(root)'}</span> — {e.message}
                   </li>
                 ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {ahkLint && (
+        <div
+          className={cn(
+            'rounded-md border p-3 text-xs',
+            ahkLint.ok
+              ? 'border-green-500/40 bg-green-500/5 text-green-700 dark:text-green-400'
+              : 'border-destructive/50 bg-destructive/5 text-destructive',
+          )}
+        >
+          {ahkLint.ok ? (
+            <p className="flex items-center gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              AutoHotkey script passes structural lint
+              {ahkLint.issues.length > 0 && (
+                <span className="text-muted-foreground">
+                  {' '}
+                  ({ahkLint.issues.length} warning
+                  {ahkLint.issues.length === 1 ? '' : 's'})
+                </span>
+              )}
+              .
+            </p>
+          ) : (
+            <div>
+              <p className="flex items-center gap-1.5 font-medium">
+                <ShieldAlert className="h-3.5 w-3.5" />
+                Generated AutoHotkey script FAILS structural lint. Download
+                blocked.
+              </p>
+              <ul className="mt-1 list-disc pl-5">
+                {ahkLint.issues
+                  .filter((i) => i.severity === 'error')
+                  .slice(0, 5)
+                  .map((i, idx) => (
+                    <li key={idx}>
+                      <span className="font-mono">
+                        {i.code} (line {i.line})
+                      </span>{' '}
+                      — {i.message}
+                    </li>
+                  ))}
               </ul>
             </div>
           )}

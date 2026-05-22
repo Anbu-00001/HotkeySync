@@ -13,6 +13,14 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // Firefox runs a smaller smoke spec to keep CI fast — see
+    // `tests/e2e/firefox-smoke.spec.ts`. KeyCapture is the highest-risk
+    // surface for browser differences, so it owns most of the smoke.
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+      testMatch: /firefox-smoke\.spec\.ts$/,
+    },
   ],
   webServer: {
     command: 'npm run dev',

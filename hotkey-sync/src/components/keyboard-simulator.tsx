@@ -1,9 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { Play, ArrowRight, ShieldOff } from 'lucide-react';
+import { Play, ArrowRight, ShieldOff, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useConfigStore } from '@/store/useConfigStore';
 import { simulateForApps } from '@/lib/simulator';
+import { detectCrossAppUsage } from '@/lib/cross-app-conflicts';
 import { parseKeyCombo, serializeKeyCombo, type Modifier, type TriggerKey } from '@/lib/keys';
 import { KeyBadge } from '@/components/key-badge';
 import { cn } from '@/lib/utils';
@@ -90,6 +91,18 @@ export function KeyboardSimulator(): React.JSX.Element {
     return simulateForApps(lastCombo, selectedAppIds, rules);
   }, [lastCombo, selectedAppIds, rules]);
 
+  // Cross-app conflict for *this specific captured combo*. Reuses the same
+  // detector that powers the global conflict matrix — keeps semantics aligned.
+  const conflictInfo = React.useMemo(() => {
+    if (!lastCombo) return null;
+    // Restrict to rules in currently-selected apps so the surfaced conflicts
+    // match what the user sees in the per-app outcomes below.
+    const selectedSet = new Set(selectedAppIds);
+    const scoped = rules.filter((r) => selectedSet.has(r.appId));
+    const all = detectCrossAppUsage(scoped);
+    return all.find((u) => u.trigger === lastCombo) ?? null;
+  }, [lastCombo, selectedAppIds, rules]);
+
   return (
     <div className="rounded-lg border bg-card p-5 space-y-3">
       <div className="flex items-start gap-3">
@@ -141,6 +154,42 @@ export function KeyboardSimulator(): React.JSX.Element {
           at the OS level.
         </p>
       </div>
+
+      {lastCombo && conflictInfo && (
+        <div
+          className={cn(
+            'rounded-md border p-3 text-xs space-y-1',
+            conflictInfo.hasConflict
+              ? 'border-destructive/50 bg-destructive/5 text-destructive'
+              : 'border-green-500/40 bg-green-500/5 text-green-700 dark:text-green-400',
+          )}
+          role="status"
+          data-testid="simulator-conflict-banner"
+        >
+          {conflictInfo.hasConflict ? (
+            <>
+              <p className="flex items-center gap-1.5 font-medium">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                Cross-app conflict: this combo does{' '}
+                {conflictInfo.uniqueActions} different things across{' '}
+                {conflictInfo.usages.length} of your selected apps.
+              </p>
+              {conflictInfo.mixedKind && (
+                <p className="text-[11px] pl-5">
+                  One side is a basic remap, the other is Tap &amp; Hold —
+                  those feel <em>completely</em> different at the keyboard.
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="flex items-center gap-1.5 font-medium">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Consistent across {conflictInfo.usages.length} apps — the same
+              behaviour everywhere this trigger is bound.
+            </p>
+          )}
+        </div>
+      )}
 
       {lastCombo && (
         <div className="rounded-md border bg-background p-3 space-y-2">

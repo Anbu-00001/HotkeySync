@@ -33,9 +33,13 @@ import {
 const APPS = appsData as App[];
 
 // Lowercased exeName → appId. Real-world AHK paths may differ in case
-// (chrome.exe vs Chrome.EXE), so we compare case-insensitively.
+// (chrome.exe vs Chrome.EXE), so we compare case-insensitively. macOS-only
+// apps without an exeName are simply absent from the lookup (their AHK
+// directives, if any, will be reported as unknown-app warnings on import).
 const EXE_LOOKUP = new Map<string, string>(
-  APPS.map((a) => [a.exeName.toLowerCase(), a.id]),
+  APPS.filter((a): a is App & { exeName: string } => Boolean(a.exeName)).map(
+    (a) => [a.exeName.toLowerCase(), a.id],
+  ),
 );
 
 // AHK modifier symbols → our Modifier names.

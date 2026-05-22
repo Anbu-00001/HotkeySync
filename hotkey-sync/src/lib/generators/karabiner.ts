@@ -113,6 +113,9 @@ export function generateKarabiner(config: Config): KarabinerOutput {
     const app = getAppById(appId);
     // Defensive: store prevents unknown appIds; if one slips through, skip the whole group.
     if (!app) continue;
+    // Karabiner is macOS-only — an app without a bundleId cannot be targeted.
+    // This happens for Windows-exclusive entries (e.g. Notepad++, PowerToys).
+    if (!app.bundleId) continue;
 
     const bundlePattern = escapeBundleId(app.bundleId);
 
@@ -132,11 +135,12 @@ export function generateKarabiner(config: Config): KarabinerOutput {
           trigger = parseKeyCombo(rule.trigger);
           tap = parseKeyCombo(rule.tapAction);
           hold = parseKeyCombo(rule.holdAction);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'Unknown parse error';
-          console.warn(
-            `[karabiner] skipped tap_hold rule for ${appId} (${rule.trigger}): ${message}`,
-          );
+        } catch {
+          // Unreachable in practice: the store normalises every rule field
+          // through parseKeyCombo + serializeKeyCombo before persist, so any
+          // rule that reaches the generator already parses. Defensive skip
+          // keeps the generator total; bad output would still be caught by
+          // validateKarabinerOutput before download.
           continue;
         }
 
@@ -167,12 +171,8 @@ export function generateKarabiner(config: Config): KarabinerOutput {
       try {
         trigger = parseKeyCombo(rule.trigger);
         action = parseKeyCombo(rule.action);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown parse error';
-        // Generators must never throw — log and skip the rule.
-        console.warn(
-          `[karabiner] skipped rule for ${appId} (${rule.trigger} → ${rule.action}): ${message}`,
-        );
+      } catch {
+        // Defensive skip — same reasoning as the tap_hold branch above.
         continue;
       }
 

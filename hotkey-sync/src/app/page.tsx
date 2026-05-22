@@ -1,19 +1,41 @@
 'use client';
 
 import * as React from 'react';
+import dynamic from 'next/dynamic';
 import { PanelRightOpen, Keyboard } from 'lucide-react';
 import { StepTracker } from '@/components/step-tracker';
 import { OSToggle } from '@/components/os-toggle';
 import { AppPicker } from '@/components/app-picker';
 import { RuleSection } from '@/components/rule-section';
 import { PresetsPanel } from '@/components/presets-panel';
+import { SuggestionsPanel } from '@/components/suggestions-panel';
 import { MiniPreview } from '@/components/mini-preview';
 import { CodePreview } from '@/components/code-preview';
 import { DownloadPanel } from '@/components/download-panel';
-import { ImportPanel } from '@/components/import-panel';
-import { KeyboardSimulator } from '@/components/keyboard-simulator';
-import { ConflictMatrixPanel } from '@/components/conflict-matrix-panel';
+// Below-the-fold heavy panels are dynamically imported to keep them out of
+// the initial JS chunk. CodePreview + DownloadPanel stay eager because they
+// gate the primary "see your output / download" loop; everything in Power
+// Tools waits until the user scrolls or interacts.
+const ImportPanel = dynamic(
+  () => import('@/components/import-panel').then((m) => ({ default: m.ImportPanel })),
+  { ssr: false },
+);
+const KeyboardSimulator = dynamic(
+  () =>
+    import('@/components/keyboard-simulator').then((m) => ({
+      default: m.KeyboardSimulator,
+    })),
+  { ssr: false },
+);
+const ConflictMatrixPanel = dynamic(
+  () =>
+    import('@/components/conflict-matrix-panel').then((m) => ({
+      default: m.ConflictMatrixPanel,
+    })),
+  { ssr: false },
+);
 import { useURLConfigImport } from '@/lib/use-url-config-import';
+import { useAutoDetectOS } from '@/lib/use-auto-detect-os';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -78,6 +100,7 @@ export default function HomePage(): React.JSX.Element {
   const ruleCount = useConfigStore((s) => s.rules.length);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const urlImportStatus = useURLConfigImport();
+  useAutoDetectOS();
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -142,9 +165,10 @@ export default function HomePage(): React.JSX.Element {
             <RuleSection />
           </section>
 
-          <section id="section-presets" className="scroll-mt-20">
-            <h2 className="text-xl font-semibold mb-3">4 — Presets</h2>
+          <section id="section-presets" className="scroll-mt-20 space-y-4">
+            <h2 className="text-xl font-semibold mb-3">4 — Presets &amp; Suggestions</h2>
             <PresetsPanel />
+            <SuggestionsPanel />
           </section>
 
           <section id="section-preview" className="scroll-mt-20 space-y-4">
