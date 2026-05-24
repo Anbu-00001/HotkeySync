@@ -47,6 +47,26 @@ export const PRESETS: Preset[] = [
     ],
   },
   {
+    id: 'browser-quit-safety',
+    name: 'Browser Quit Safety',
+    description:
+      'Stops accidental quits in Firefox (Ctrl+Q) and Chrome (Ctrl+Shift+Q). Reddit + HN top-cited safety net.',
+    rules: [
+      { kind: 'disable', appId: 'mozilla-firefox', trigger: 'ctrl+q', description: 'Stop Firefox quitting' },
+      { kind: 'disable', appId: 'google-chrome', trigger: 'ctrl+shift+q', description: 'Stop Chrome force-quitting' },
+    ],
+  },
+  {
+    id: 'office-safety',
+    name: 'Office Safety',
+    description:
+      'Excel F1 → Esc (stop F1 opening Help on F2 mis-keys) + Outlook Ctrl+Enter disable (the New-Outlook-removed accidental-send safety net).',
+    rules: [
+      { kind: 'basic', appId: 'microsoft-excel', trigger: 'f1', action: 'escape', description: 'Stop F1 opening Help' },
+      { kind: 'disable', appId: 'outlook', trigger: 'ctrl+return_or_enter', description: 'Stop Outlook auto-sending on Ctrl+Enter' },
+    ],
+  },
+  {
     id: 'tap-hold-vscode-grave',
     name: 'Tap & Hold: Esc on tap, Toggle Terminal on hold',
     description:

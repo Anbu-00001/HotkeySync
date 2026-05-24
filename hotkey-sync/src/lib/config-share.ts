@@ -6,16 +6,17 @@
  *
  * v1 format (frozen — old share URLs keep working forever):
  *   { v: 1, o, s, r: [{ a, t, x, d }] }     — basic rules only, no `k` field
- * v2 format (current — adds tap_hold via `k: 'h'`):
- *   { v: 2, o, s, r: [
+ * v2 format (adds tap_hold via `k: 'h'`):
+ *   { v: 2, o, s, r: [ basic | tap_hold ] }
+ * v3 format (current — adds disable via `k: 'd'`):
+ *   { v: 3, o, s, r: [
  *     { a, t, x, d }                        // basic; no `k` field
  *     | { k: 'h', a, t, xa, xh, ms, d }     // tap_hold
+ *     | { k: 'd', a, t, d }                 // disable (key swallowed)
  *   ] }
  *
- * Decoder accepts BOTH; rules without a `k` field are treated as basic on
- * both v1 and v2. Encoder emits v2; basic-only configs produce a payload
- * that's structurally identical to v1 except for the version literal, so
- * v1-only consumers (if any) could still parse it.
+ * Decoder accepts all three versions; rules without a `k` field are basic on
+ * any version. Encoder emits v3.
  *
  * URL convention: `#hk=<base64url>`. All decode paths are defensive — malformed
  * input returns a structured error, never throws.
@@ -31,9 +32,10 @@ import {
 import { keyComboSchema } from '@/lib/schemas';
 
 export const SHARE_HASH_PREFIX = '#hk=';
-export const SHARE_VERSION = 2 as const;
-/** v1 is still accepted on decode. We emit only v2. */
+export const SHARE_VERSION = 3 as const;
+/** Older versions still accepted on decode. We emit only the current version. */
 export const SHARE_VERSION_LEGACY_V1 = 1 as const;
+export const SHARE_VERSION_LEGACY_V2 = 2 as const;
 
 // Each rule in the encoded payload is a discriminated union on `k`.
 // Basic rules omit `k` entirely (so v1 payloads decode unchanged).
@@ -55,12 +57,24 @@ const tapHoldShortRuleSchema = z.object({
   d: z.string().min(0).max(120),
 });
 
-const shortRuleSchema = z.union([basicShortRuleSchema, tapHoldShortRuleSchema]);
+const disableShortRuleSchema = z.object({
+  k: z.literal('d'),
+  a: z.string().min(1).max(64),
+  t: keyComboSchema,
+  d: z.string().min(0).max(120),
+});
+
+const shortRuleSchema = z.union([
+  basicShortRuleSchema,
+  tapHoldShortRuleSchema,
+  disableShortRuleSchema,
+]);
 
 const sharedConfigSchema = z.object({
   v: z.union([
     z.literal(SHARE_VERSION),
     z.literal(SHARE_VERSION_LEGACY_V1),
+    z.literal(SHARE_VERSION_LEGACY_V2),
   ]),
   o: z.enum(['windows', 'mac']),
   s: z.array(z.string().min(1).max(64)).max(200),
@@ -97,15 +111,22 @@ export function encodeConfig(state: ConfigState): string {
     r: state.rules.map((r) =>
       r.kind === 'basic'
         ? { a: r.appId, t: r.trigger, x: r.action, d: r.description }
-        : {
-            k: 'h' as const,
-            a: r.appId,
-            t: r.trigger,
-            xa: r.tapAction,
-            xh: r.holdAction,
-            ms: r.tapTimeoutMs,
-            d: r.description,
-          },
+        : r.kind === 'tap_hold'
+          ? {
+              k: 'h' as const,
+              a: r.appId,
+              t: r.trigger,
+              xa: r.tapAction,
+              xh: r.holdAction,
+              ms: r.tapTimeoutMs,
+              d: r.description,
+            }
+          : {
+              k: 'd' as const,
+              a: r.appId,
+              t: r.trigger,
+              d: r.description,
+            },
     ),
   };
   return toBase64Url(JSON.stringify(blob));
@@ -148,25 +169,35 @@ export function decodeConfig(encoded: string): DecodeResult {
     };
   }
   const blob = result.data;
-  const rules: HotkeyRule[] = blob.r.map((r) =>
-    'k' in r && r.k === 'h'
-      ? {
-          kind: 'tap_hold' as const,
-          appId: r.a,
-          trigger: r.t,
-          tapAction: r.xa,
-          holdAction: r.xh,
-          tapTimeoutMs: r.ms,
-          description: r.d,
-        }
-      : {
-          kind: 'basic' as const,
-          appId: r.a,
-          trigger: r.t,
-          action: r.x,
-          description: r.d,
-        },
-  );
+  const rules: HotkeyRule[] = blob.r.map((r) => {
+    if ('k' in r && r.k === 'h') {
+      return {
+        kind: 'tap_hold' as const,
+        appId: r.a,
+        trigger: r.t,
+        tapAction: r.xa,
+        holdAction: r.xh,
+        tapTimeoutMs: r.ms,
+        description: r.d,
+      };
+    }
+    if ('k' in r && r.k === 'd') {
+      return {
+        kind: 'disable' as const,
+        appId: r.a,
+        trigger: r.t,
+        description: r.d,
+      };
+    }
+    // basic — falls through (no `k` field or `k` undefined)
+    return {
+      kind: 'basic' as const,
+      appId: r.a,
+      trigger: r.t,
+      action: (r as { x: string }).x,
+      description: r.d,
+    };
+  });
   return {
     ok: true,
     config: { os: blob.o satisfies OS, selectedAppIds: blob.s, rules },

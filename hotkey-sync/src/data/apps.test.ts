@@ -136,4 +136,26 @@ describe('apps.json — catalogue invariants', () => {
       }
     }
   });
+
+  it('lockedShortcuts flag is only set on apps verified by two independent sources', () => {
+    // Source policy (project_twitter_pinterest_validation.md): an app gets
+    // lockedShortcuts=true only if (a) its official docs confirm no in-app
+    // shortcut editor AND (b) Reddit/HN/forum threads show user complaints
+    // about it. Cross-source matrix lives in the linked memory file.
+    const expectedLocked = new Set([
+      'slack',    // Reddit + HN dogpile; Slack KB confirms zero customization
+      'notion',   // r/Notion + Notion product docs
+      'figma',    // soft signal; Figma docs confirm no editor
+      'spotify',  // weak signal; Spotify community confirms
+      'outlook',  // MS TechCommunity (post-New-Outlook regression)
+    ]);
+    for (const app of APPS) {
+      const isLocked = app.lockedShortcuts === true;
+      const expected = expectedLocked.has(app.id);
+      expect(
+        isLocked,
+        `lockedShortcuts mismatch for "${app.id}": expected ${expected}, got ${isLocked}`,
+      ).toBe(expected);
+    }
+  });
 });

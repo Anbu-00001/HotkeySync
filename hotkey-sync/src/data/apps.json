@@ -217,7 +217,8 @@
     "bundleId": "notion.id",
     "category": "Notes",
     "icon": "📋",
-    "platforms": ["windows", "mac"]
+    "platforms": ["windows", "mac"],
+    "lockedShortcuts": true
   },
   {
     "id": "obsidian",
@@ -272,7 +273,8 @@
     "category": "Mail",
     "icon": "📨",
     "platforms": ["windows", "mac"],
-    "aliases": ["outlook"]
+    "aliases": ["outlook"],
+    "lockedShortcuts": true
   },
   {
     "id": "apple-mail",
@@ -290,7 +292,8 @@
     "bundleId": "com.tinyspeck.slackmacgap",
     "category": "Communication",
     "icon": "💬",
-    "platforms": ["windows", "mac"]
+    "platforms": ["windows", "mac"],
+    "lockedShortcuts": true
   },
   {
     "id": "discord",
@@ -354,7 +357,8 @@
     "bundleId": "com.figma.Desktop",
     "category": "Design",
     "icon": "🎨",
-    "platforms": ["windows", "mac"]
+    "platforms": ["windows", "mac"],
+    "lockedShortcuts": true
   },
   {
     "id": "photoshop",
@@ -420,7 +424,8 @@
     "bundleId": "com.spotify.client",
     "category": "Media",
     "icon": "🎵",
-    "platforms": ["windows", "mac"]
+    "platforms": ["windows", "mac"],
+    "lockedShortcuts": true
   },
   {
     "id": "vlc",

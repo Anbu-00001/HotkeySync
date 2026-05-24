@@ -275,3 +275,25 @@ describe('buildShareURL', () => {
     expect(url).not.toContain('#old=');
   });
 });
+
+describe('Share URL — disable kind (v3)', () => {
+  it('round-trips a disable rule through encode → decode', () => {
+    const state: ConfigState = {
+      os: 'mac',
+      selectedAppIds: ['mozilla-firefox'],
+      rules: [
+        {
+          kind: 'disable',
+          appId: 'mozilla-firefox',
+          trigger: 'meta+q',
+          description: 'Stop Firefox quitting',
+        },
+      ],
+    };
+    const encoded = encodeConfig(state);
+    const decoded = decodeConfig(encoded);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.config).toEqual(state);
+  });
+});

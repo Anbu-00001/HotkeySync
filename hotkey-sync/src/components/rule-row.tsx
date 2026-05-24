@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Trash2, AlertTriangle, ArrowRight, Zap } from 'lucide-react';
+import { Trash2, AlertTriangle, ArrowRight, Zap, Ban } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KeyCaptureInput } from '@/components/key-capture-input';
@@ -31,6 +31,7 @@ export function RuleRow({
   const [actionError, setActionError] = React.useState<string | null>(null);
 
   const isTapHold = rule.kind === 'tap_hold';
+  const isDisable = rule.kind === 'disable';
 
   return (
     <div
@@ -60,6 +61,12 @@ export function RuleRow({
                 Tap &amp; Hold
               </Badge>
             )}
+            {isDisable && (
+              <Badge variant="outline" className="text-[10px] gap-1">
+                <Ban className="h-2.5 w-2.5" />
+                Disabled
+              </Badge>
+            )}
           </div>
         </div>
         <ArrowRight
@@ -74,6 +81,10 @@ export function RuleRow({
             placeholder="Capture action"
             aria-label="Action key"
           />
+        ) : rule.kind === 'disable' ? (
+          <span className="text-xs text-muted-foreground italic mt-2">
+            key is swallowed — does nothing in this app
+          </span>
         ) : (
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">

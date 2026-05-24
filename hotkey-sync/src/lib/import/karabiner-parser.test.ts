@@ -462,3 +462,56 @@ describe('Karabiner importer — tap_hold patterns', () => {
     expect(out.result.warnings.some((w) => /to_after_key_up/.test(w.reason))).toBe(true);
   });
 });
+
+describe('Karabiner round-trip — disable kind', () => {
+  it('round-trips a single disable rule (vk_none) without warnings', () => {
+    const cfg: Config = {
+      os: 'mac',
+      rules: [
+        {
+          kind: 'disable',
+          appId: 'mozilla-firefox',
+          trigger: 'meta+q',
+          description: 'Stop Firefox quitting',
+        },
+      ],
+    };
+    const out = parseKarabinerJSON(jsonStr(cfg));
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.result.warnings).toEqual([]);
+    expect(out.result.rules).toHaveLength(1);
+    expect(out.result.rules[0]).toMatchObject({
+      kind: 'disable',
+      appId: 'mozilla-firefox',
+      trigger: 'meta+q',
+    });
+  });
+
+  it('parses a hand-written vk_none manipulator', () => {
+    const raw = JSON.stringify({
+      rules: [
+        {
+          description: 'Hand: kill q',
+          manipulators: [
+            {
+              type: 'basic',
+              from: { key_code: 'q', modifiers: { mandatory: ['command'] } },
+              to: [{ key_code: 'vk_none' }],
+              conditions: [
+                {
+                  type: 'frontmost_application_if',
+                  bundle_identifiers: ['^org\\.mozilla\\.firefox$'],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const out = parseKarabinerJSON(raw);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.result.rules[0].kind).toBe('disable');
+  });
+});

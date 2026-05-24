@@ -131,7 +131,7 @@ export function ConflictMatrixPanel(): React.JSX.Element {
                       <span className="text-muted-foreground">→</span>
                       {usage.kind === 'basic' ? (
                         <KeyBadge combo={usage.action} size="sm" />
-                      ) : (
+                      ) : usage.kind === 'tap_hold' ? (
                         <span className="inline-flex items-center gap-1 text-[11px]">
                           <span className="text-muted-foreground">tap</span>
                           <KeyBadge combo={usage.tapAction} size="sm" />
@@ -140,6 +140,10 @@ export function ConflictMatrixPanel(): React.JSX.Element {
                           <span className="text-muted-foreground">
                             @ {usage.tapTimeoutMs}&thinsp;ms
                           </span>
+                        </span>
+                      ) : (
+                        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                          disabled
                         </span>
                       )}
                       {usage.description && (

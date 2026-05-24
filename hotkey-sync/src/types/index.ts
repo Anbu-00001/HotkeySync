@@ -59,6 +59,20 @@ export interface App {
    * IDEA). The picker's substring filter also matches against these.
    */
   aliases?: readonly string[];
+  /**
+   * `true` for apps that ship with no native shortcut customization — Slack,
+   * Notion, Figma, Spotify, modern Outlook. HotkeySync is effectively the
+   * only way to rebind keys for these apps. Surfaced as a badge in the picker
+   * so users can find "we are the only path" apps quickly.
+   *
+   * Selection criteria for flipping this flag on a new app:
+   *   1. Two independent sources confirming "no in-app shortcut editor"
+   *      (official docs + Reddit/HN/forum complaints).
+   *   2. The app has enough hotkey surface that someone would want to remap.
+   *
+   * Default is undefined/false. Validated in src/data/apps.test.ts.
+   */
+  lockedShortcuts?: boolean;
 }
 
 /** Standard remap: trigger fires action, replacing the OS default. */

@@ -39,6 +39,8 @@ const SEND_RHS_RX = /^Send\("((?:[^"\\]|\\.)*)"\)\s*(?:;.*)?$/;
 /** RHS shape: `TapHoldAction(<ms>, "<tap>", "<hold>")`. */
 const TAP_HOLD_RHS_RX =
   /^TapHoldAction\(\s*(\d+)\s*,\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*\)\s*(?:;.*)?$/;
+/** RHS shape: `return` — HotkeySync's canonical key-swallow / disable form. */
+const DISABLE_RHS_RX = /^return\s*(?:;.*)?$/;
 /** Helper definition's first line (anchor for AHK006). */
 const HELPER_DEF_RX = /^TapHoldAction\(timeoutMs,\s*tapAction,\s*holdAction\)\s*\{/;
 
@@ -181,14 +183,23 @@ export function lintAHK(source: string): AHKLintResult {
       }
     }
 
-    // RHS must be Send(...) or TapHoldAction(...).
-    if (!SEND_RHS_RX.test(rhs) && !TAP_HOLD_RHS_RX.test(rhs)) {
+    // RHS must be Send(...), TapHoldAction(...), or bare `return` (disable).
+    if (
+      !SEND_RHS_RX.test(rhs) &&
+      !TAP_HOLD_RHS_RX.test(rhs) &&
+      !DISABLE_RHS_RX.test(rhs)
+    ) {
       push(
         'AHK005',
         'error',
         lineNo,
-        `Hotkey "${trigger}" has unrecognised RHS — expected Send("...") or TapHoldAction(<ms>, "<tap>", "<hold>"). Got: ${truncate(rhs, 60)}`,
+        `Hotkey "${trigger}" has unrecognised RHS — expected Send("..."), TapHoldAction(<ms>, "<tap>", "<hold>"), or "return" (disable). Got: ${truncate(rhs, 60)}`,
       );
+      continue;
+    }
+
+    // disable form has no quoted arguments — skip the quote-balance check.
+    if (DISABLE_RHS_RX.test(rhs)) {
       continue;
     }
 

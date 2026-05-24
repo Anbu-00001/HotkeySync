@@ -222,7 +222,7 @@ export function KeyboardSimulator(): React.JSX.Element {
                             ({o.matched.description})
                           </span>
                         </>
-                      ) : (
+                      ) : o.matched.kind === 'tap_hold' ? (
                         <>
                           <ArrowRight className="h-3 w-3 text-muted-foreground" />
                           <span className="flex flex-col text-[10px] text-muted-foreground">
@@ -232,6 +232,17 @@ export function KeyboardSimulator(): React.JSX.Element {
                             <span>
                               hold&nbsp;(≥{o.matched.tapTimeoutMs}&thinsp;ms): <KeyBadge combo={o.matched.holdAction} size="sm" />
                             </span>
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                          <span className="inline-flex items-center gap-1 text-muted-foreground italic">
+                            <ShieldOff className="h-3 w-3" />
+                            disabled — key swallowed
+                          </span>
+                          <span className="text-muted-foreground">
+                            ({o.matched.description})
                           </span>
                         </>
                       )

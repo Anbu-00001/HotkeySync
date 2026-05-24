@@ -820,15 +820,27 @@ test.describe('Hardened — Suggestion engine', () => {
     page,
   }) => {
     await page.goto('/');
-    // Discord (safety) + Chrome (standardise) → safety should be first.
+    // Chrome + Discord → safety-tagged entries (browser quit safety, discord
+    // close-tab) sort before standardise-tagged (chrome-prefs). We assert
+    // ordering by tag, not by exact id, so adding new safety suggestions for
+    // the same apps doesn't keep breaking this test (it has already been
+    // amended once when chrome-disable-ctrl-shift-q joined the catalogue).
     await page.getByRole('checkbox', { name: /Google Chrome/ }).click();
     await page.getByRole('checkbox', { name: /Discord/ }).click();
 
-    const items = page.locator('[data-suggestion-id]');
-    await expect(items.first()).toHaveAttribute(
-      'data-suggestion-id',
+    const safetyIds = new Set([
+      'chrome-disable-ctrl-shift-q',
       'discord-close-tab',
+    ]);
+    const items = page.locator('[data-suggestion-id]');
+    const firstId = await items.first().getAttribute('data-suggestion-id');
+    expect(firstId).not.toBeNull();
+    expect(safetyIds.has(firstId as string)).toBe(true);
+    // And the standardise entry must come AFTER at least one safety entry.
+    const chromePrefsIndex = await items.evaluateAll((els) =>
+      els.findIndex((e) => e.getAttribute('data-suggestion-id') === 'chrome-prefs'),
     );
+    expect(chromePrefsIndex).toBeGreaterThan(0);
   });
 
   test('Clicking Add applies the rule; suggestion disappears from the list', async ({

@@ -66,10 +66,14 @@ export function MiniPreview(): React.JSX.Element {
                           />
                           {r.kind === 'basic' ? (
                             <KeyBadge combo={r.action} size="sm" />
-                          ) : (
+                          ) : r.kind === 'tap_hold' ? (
                             <span className="inline-flex flex-col gap-0.5 text-[10px] text-muted-foreground">
                               <span>tap: <KeyBadge combo={r.tapAction} size="sm" /></span>
                               <span>hold: <KeyBadge combo={r.holdAction} size="sm" /></span>
+                            </span>
+                          ) : (
+                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              disabled
                             </span>
                           )}
                         </div>

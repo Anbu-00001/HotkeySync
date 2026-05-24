@@ -319,3 +319,38 @@ describe('generateKarabiner — unknown appId', () => {
     expect(out.rules).toEqual([]);
   });
 });
+
+describe('generateKarabiner — disable rule', () => {
+  const disableRule: HotkeyRule = {
+    kind: 'disable',
+    appId: 'mozilla-firefox',
+    trigger: 'meta+q',
+    description: 'Stop Firefox quitting',
+  };
+  const out = generateKarabiner(makeConfig([disableRule]));
+
+  it('emits exactly one manipulator', () => {
+    expect(out.rules).toHaveLength(1);
+    expect(out.rules[0].manipulators).toHaveLength(1);
+  });
+
+  it('emits vk_none as the to target (Karabiner swallow sentinel)', () => {
+    expect(out.rules[0].manipulators[0].to).toEqual([{ key_code: 'vk_none' }]);
+  });
+
+  it('omits to_if_alone / to_if_held_down (disable is not tap_hold)', () => {
+    const m = out.rules[0].manipulators[0];
+    expect(m.to_if_alone).toBeUndefined();
+    expect(m.to_if_held_down).toBeUndefined();
+  });
+
+  it('prefixes description with app name like other kinds', () => {
+    expect(out.rules[0].description).toBe('Mozilla Firefox: Stop Firefox quitting');
+  });
+
+  it('still scopes to the app via frontmost_application_if', () => {
+    const conds = out.rules[0].manipulators[0].conditions;
+    expect(conds[0].type).toBe('frontmost_application_if');
+    expect(conds[0].bundle_identifiers[0]).toMatch(/firefox/i);
+  });
+});

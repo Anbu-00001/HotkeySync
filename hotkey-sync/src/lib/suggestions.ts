@@ -200,6 +200,81 @@ const SUGGESTIONS: Suggestion[] = [
       description: 'Create New Layer instead of Help',
     },
   },
+  // Safety — disable rules. Each one cites Reddit + HN/forum dual signal.
+  // Firefox Ctrl+Q quit-trap: Reddit r/firefox/comments/7fehbb/ score 101
+  // ("Please give us an option to disable ctrl-q!") + multi-year HN dogpile.
+  // The single highest-signal disable candidate in the entire corpus.
+  {
+    id: 'firefox-disable-ctrl-q',
+    tag: 'safety',
+    rationale:
+      'Ctrl+Q quits Firefox without confirmation — one slip and every tab is gone. Reddit dogpile (score 101+) wants this gone by default; we make it a no-op.',
+    rule: {
+      kind: 'disable',
+      appId: 'mozilla-firefox',
+      trigger: 'ctrl+q',
+      description: 'Stop Firefox quitting',
+    },
+  },
+  // Chrome Ctrl+Shift+Q (not plain Ctrl+Q) is the real complaint per Reddit
+  // r/chrome/comments/39jdxt/ "I hate Ctrl-Shift-Q!". Plain Ctrl+Q on Chrome
+  // PC is conditional; Ctrl+Shift+Q is hard-coded quit.
+  {
+    id: 'chrome-disable-ctrl-shift-q',
+    tag: 'safety',
+    rationale:
+      'Ctrl+Shift+Q force-quits Chrome with no confirmation — the actual sharp edge users complain about, not plain Ctrl+Q. Disable it entirely.',
+    rule: {
+      kind: 'disable',
+      appId: 'google-chrome',
+      trigger: 'ctrl+shift+q',
+      description: 'Stop Chrome force-quitting',
+    },
+  },
+  // Cursor Cmd+Shift+L hijack: Cursor forum has multiple threads using
+  // "hijacked" — it was VS Code's Select All Occurrences; Cursor reuses it
+  // for AI chat. Disabling restores muscle memory.
+  {
+    id: 'cursor-disable-cmd-shift-l',
+    tag: 'safety',
+    rationale:
+      'Cursor hijacks Cmd+Shift+L (was Select All Occurrences in VS Code) for the AI chat panel. Disable it so the chord stays available for a manual rebind.',
+    rule: {
+      kind: 'disable',
+      appId: 'cursor',
+      trigger: 'meta+shift+l',
+      description: 'Free up Cmd+Shift+L from Cursor AI panel',
+    },
+  },
+  // Cursor Ctrl+Shift+S sibling (surfaced by Twitter/X triangulation —
+  // https://forum.cursor.com/t/keyboard-shortcut-ctrl-shift-s-hijacked-by-cursor/115798).
+  {
+    id: 'cursor-disable-ctrl-shift-s',
+    tag: 'safety',
+    rationale:
+      'Cursor also rebinds Ctrl+Shift+S (Save As in VS Code) to its own action — disable to restore the universal Save As muscle memory.',
+    rule: {
+      kind: 'disable',
+      appId: 'cursor',
+      trigger: 'ctrl+shift+s',
+      description: 'Free up Ctrl+Shift+S from Cursor',
+    },
+  },
+  // Outlook Ctrl+Enter accidental-send: MS TechCommunity dogpile
+  // (https://techcommunity.microsoft.com/discussions/outlookgeneral/disable-ctrlenter-to-send-mail/4040831)
+  // — especially since New Outlook removed the native toggle.
+  {
+    id: 'outlook-disable-ctrl-enter',
+    tag: 'safety',
+    rationale:
+      'Ctrl+Enter sends a draft instantly with no confirmation — New Outlook removed the toggle to disable it. We restore the safety net via a per-app no-op.',
+    rule: {
+      kind: 'disable',
+      appId: 'outlook',
+      trigger: 'ctrl+return_or_enter',
+      description: 'Stop Outlook auto-sending on Ctrl+Enter',
+    },
+  },
   // Tap & Hold — single suggestion to lure users into trying it.
   {
     id: 'vscode-tap-hold-grave',

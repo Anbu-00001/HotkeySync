@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Check } from 'lucide-react';
+import { Check, Lock } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -62,6 +62,15 @@ export function AppCard({
               {app.category}
             </Badge>
           )}
+          {app.lockedShortcuts && (
+            <span
+              className="absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300"
+              aria-label="No native shortcut customization"
+              data-testid="locked-shortcuts-badge"
+            >
+              <Lock className="h-2.5 w-2.5" />
+            </span>
+          )}
           <span className="text-2xl leading-none" aria-hidden="true">
             {app.icon}
           </span>
@@ -70,7 +79,14 @@ export function AppCard({
           </span>
         </div>
       </TooltipTrigger>
-      <TooltipContent>{app.name}</TooltipContent>
+      <TooltipContent>
+        {app.name}
+        {app.lockedShortcuts && (
+          <span className="block text-xs text-muted-foreground mt-0.5">
+            Locked: no native shortcut editor — HotkeySync is the only way to rebind.
+          </span>
+        )}
+      </TooltipContent>
     </Tooltip>
   );
 }

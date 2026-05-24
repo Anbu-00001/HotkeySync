@@ -298,3 +298,39 @@ describe('generateAHK — unknown appId', () => {
     expect(out).not.toContain('#HotIf WinActive');
   });
 });
+
+describe('generateAHK — disable rule', () => {
+  const disableRule: HotkeyRule = {
+    kind: 'disable',
+    appId: 'mozilla-firefox',
+    trigger: 'ctrl+q',
+    description: 'Stop Firefox quitting',
+  };
+  const out = generateAHK(makeConfig([disableRule]));
+
+  it('opens a #HotIf block scoped to the app exe', () => {
+    expect(out).toContain('#HotIf WinActive("ahk_exe firefox.exe")');
+  });
+
+  it('emits the canonical Trigger:: return line', () => {
+    expect(out).toMatch(/\^q:: return\s+; Stop Firefox quitting \(disabled\)/);
+  });
+
+  it('does NOT inject the tap-hold helper for disable-only configs', () => {
+    expect(out).not.toContain('TapHoldAction(');
+  });
+
+  it('skips a malformed disable trigger with a skip comment', () => {
+    const out2 = generateAHK(
+      makeConfig([
+        {
+          kind: 'disable',
+          appId: 'mozilla-firefox',
+          trigger: 'ctrl+nope',
+          description: 'bad',
+        },
+      ]),
+    );
+    expect(out2).toContain('; Skipped malformed disable rule');
+  });
+});

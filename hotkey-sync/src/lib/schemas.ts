@@ -92,6 +92,7 @@ export const appSchema = z
     icon: z.string().min(1).max(8),
     platforms: z.array(platformSchema).nonempty().optional(),
     aliases: z.array(z.string().min(1)).optional(),
+    lockedShortcuts: z.boolean().optional(),
   })
   .superRefine((app, ctx) => {
     const platforms = app.platforms ?? ['windows', 'mac'];

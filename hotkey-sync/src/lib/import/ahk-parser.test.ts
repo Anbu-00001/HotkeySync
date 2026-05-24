@@ -276,3 +276,34 @@ describe('AHK importer — defensive', () => {
     expect(() => parseAHK('not actual ahk: garbage::: ()')).not.toThrow();
   });
 });
+
+describe('AHK round-trip — disable kind', () => {
+  it('round-trips a HotkeySync-emitted Trigger:: return line', () => {
+    const src = [
+      '#Requires AutoHotkey v2.0+',
+      '#SingleInstance Force',
+      '',
+      '; ═══ Firefox ═══',
+      '#HotIf WinActive("ahk_exe firefox.exe")',
+      '^q:: return  ; Stop Firefox quitting (disabled)',
+      '#HotIf',
+      '',
+    ].join('\n');
+    const out = parseAHK(src);
+    expect(out.warnings).toEqual([]);
+    expect(out.rules).toHaveLength(1);
+    expect(out.rules[0]).toMatchObject({
+      kind: 'disable',
+      appId: 'mozilla-firefox',
+      trigger: 'ctrl+q',
+      description: 'Stop Firefox quitting',
+    });
+  });
+
+  it('warns and skips a disable line outside any #HotIf block', () => {
+    const src = '^q:: return\n';
+    const out = parseAHK(src);
+    expect(out.rules).toHaveLength(0);
+    expect(out.warnings.some((w) => /outside any #HotIf/.test(w.reason))).toBe(true);
+  });
+});

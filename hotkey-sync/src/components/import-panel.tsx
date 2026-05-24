@@ -348,7 +348,9 @@ function ImportPreview({
                 <strong>{r.appId}</strong>: {r.trigger} →{' '}
                 {r.kind === 'basic'
                   ? r.action
-                  : `${r.tapAction} (tap) / ${r.holdAction} (hold @${r.tapTimeoutMs}ms)`}{' '}
+                  : r.kind === 'tap_hold'
+                    ? `${r.tapAction} (tap) / ${r.holdAction} (hold @${r.tapTimeoutMs}ms)`
+                    : '(disabled)'}{' '}
                 {r.description && (
                   <span className={cn('text-foreground/60')}>({r.description})</span>
                 )}

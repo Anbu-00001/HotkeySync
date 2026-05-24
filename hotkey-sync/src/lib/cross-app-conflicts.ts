@@ -35,6 +35,12 @@ export type TriggerUsage =
       holdAction: string;
       tapTimeoutMs: number;
       description: string;
+    }
+  | {
+      appId: string;
+      kind: 'disable';
+      behaviourKey: string;
+      description: string;
     };
 
 export interface CrossAppUsage {
@@ -49,9 +55,11 @@ export interface CrossAppUsage {
 }
 
 function behaviourKey(rule: HotkeyRule): string {
-  return rule.kind === 'basic'
-    ? `basic:${rule.action}`
-    : `tap_hold:${rule.tapAction}|${rule.holdAction}@${rule.tapTimeoutMs}ms`;
+  if (rule.kind === 'basic') return `basic:${rule.action}`;
+  if (rule.kind === 'tap_hold') {
+    return `tap_hold:${rule.tapAction}|${rule.holdAction}@${rule.tapTimeoutMs}ms`;
+  }
+  return 'disable:';
 }
 
 /**
@@ -73,34 +81,45 @@ export function detectCrossAppUsage(rules: HotkeyRule[]): CrossAppUsage[] {
     const distinctAppIds = new Set(bucket.map((r) => r.appId));
     if (distinctAppIds.size < 2) continue;
 
-    const usages: TriggerUsage[] = bucket.map((r) =>
-      r.kind === 'basic'
-        ? {
-            appId: r.appId,
-            kind: 'basic',
-            behaviourKey: behaviourKey(r),
-            action: r.action,
-            description: r.description,
-          }
-        : {
-            appId: r.appId,
-            kind: 'tap_hold',
-            behaviourKey: behaviourKey(r),
-            tapAction: r.tapAction,
-            holdAction: r.holdAction,
-            tapTimeoutMs: r.tapTimeoutMs,
-            description: r.description,
-          },
-    );
+    const usages: TriggerUsage[] = bucket.map((r) => {
+      if (r.kind === 'basic') {
+        return {
+          appId: r.appId,
+          kind: 'basic' as const,
+          behaviourKey: behaviourKey(r),
+          action: r.action,
+          description: r.description,
+        };
+      }
+      if (r.kind === 'tap_hold') {
+        return {
+          appId: r.appId,
+          kind: 'tap_hold' as const,
+          behaviourKey: behaviourKey(r),
+          tapAction: r.tapAction,
+          holdAction: r.holdAction,
+          tapTimeoutMs: r.tapTimeoutMs,
+          description: r.description,
+        };
+      }
+      return {
+        appId: r.appId,
+        kind: 'disable' as const,
+        behaviourKey: behaviourKey(r),
+        description: r.description,
+      };
+    });
     const uniqueActions = new Set(usages.map((u) => u.behaviourKey)).size;
-    const hasBasic = usages.some((u) => u.kind === 'basic');
-    const hasTapHold = usages.some((u) => u.kind === 'tap_hold');
+    // Mixed-kind = more than one distinct rule kind on the same trigger across
+    // apps. A basic-vs-disable or tap_hold-vs-disable mix is just as
+    // surprising to a user as basic-vs-tap_hold, so we generalise.
+    const distinctKinds = new Set(usages.map((u) => u.kind)).size;
     out.push({
       trigger,
       usages,
       uniqueActions,
       hasConflict: uniqueActions > 1,
-      mixedKind: hasBasic && hasTapHold,
+      mixedKind: distinctKinds > 1,
     });
   }
 

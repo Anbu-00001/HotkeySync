@@ -113,12 +113,16 @@ export function SuggestionsPanel(): React.JSX.Element | null {
                 <span className="text-muted-foreground text-xs">→</span>
                 {s.rule.kind === 'basic' ? (
                   <KeyBadge combo={s.rule.action} size="sm" />
-                ) : (
+                ) : s.rule.kind === 'tap_hold' ? (
                   <span className="inline-flex items-center gap-1 text-[11px]">
                     <span className="text-muted-foreground">tap</span>
                     <KeyBadge combo={s.rule.tapAction} size="sm" />
                     <span className="text-muted-foreground">/ hold</span>
                     <KeyBadge combo={s.rule.holdAction} size="sm" />
+                  </span>
+                ) : (
+                  <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    disabled
                   </span>
                 )}
               </div>
