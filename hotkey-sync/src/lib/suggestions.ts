@@ -168,6 +168,38 @@ const SUGGESTIONS: Suggestion[] = [
       description: 'Vim-style left arrow (global, not just editor)',
     },
   },
+  // Safety — F1 mis-key disasters.
+  // Excel: F1 sits next to F2 (rename/edit cell) — countless mis-keys
+  // open Help instead. Decade-old AHK forum thread documents the pain.
+  // https://www.autohotkey.com/board/topic/91383-remap-f1-to-avoid-accidentally-starting-help-in-excel-globally/
+  {
+    id: 'excel-f1-esc',
+    tag: 'safety',
+    rationale:
+      'F1 sits right next to F2 (rename / edit cell) — pressing it opens the Help pane mid-flow. Remap to Escape so a mis-key is a no-op.',
+    rule: {
+      kind: 'basic',
+      appId: 'microsoft-excel',
+      trigger: 'f1',
+      action: 'escape',
+      description: 'Stop F1 opening Help',
+    },
+  },
+  // Photoshop F1 → New Layer is the most-imported rule in the Karabiner
+  // community gallery (Photoshop_Windows_keymaps.json).
+  {
+    id: 'photoshop-f1-new-layer',
+    tag: 'productivity',
+    rationale:
+      'F1 opens Help — interrupts flow. The Karabiner community remaps it to New Layer (Shift+Ctrl+Alt+N) since the shortcut chord is unergonomic.',
+    rule: {
+      kind: 'basic',
+      appId: 'photoshop',
+      trigger: 'f1',
+      action: 'shift+ctrl+alt+n',
+      description: 'Create New Layer instead of Help',
+    },
+  },
   // Tap & Hold — single suggestion to lure users into trying it.
   {
     id: 'vscode-tap-hold-grave',

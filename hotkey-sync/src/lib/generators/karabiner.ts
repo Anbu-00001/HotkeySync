@@ -127,6 +127,30 @@ export function generateKarabiner(config: Config): KarabinerOutput {
         },
       ];
 
+      if (rule.kind === 'disable') {
+        let trigger: KeyCombo;
+        try {
+          trigger = parseKeyCombo(rule.trigger);
+        } catch {
+          continue;
+        }
+        // vk_none is Karabiner's conventional "swallow event" sentinel —
+        // see complex_modifications gallery (browser-rshift-enter-disable.json
+        // and many others). The key remains pressable but does nothing.
+        output.rules.push({
+          description: `${app.name}: ${rule.description}`,
+          manipulators: [
+            {
+              type: 'basic',
+              from: buildKarabinerFrom(trigger),
+              to: [{ key_code: 'vk_none' }],
+              conditions,
+            },
+          ],
+        });
+        continue;
+      }
+
       if (rule.kind === 'tap_hold') {
         let trigger: KeyCombo;
         let tap: KeyCombo;

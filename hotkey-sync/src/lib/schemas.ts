@@ -36,9 +36,17 @@ export const tapHoldRuleSchema = z.object({
   description: z.string().min(1).max(120),
 });
 
+export const disableRuleSchema = z.object({
+  kind: z.literal('disable'),
+  appId: z.string().min(1),
+  trigger: keyComboSchema,
+  description: z.string().min(1).max(120),
+});
+
 export const hotkeyRuleSchema = z.discriminatedUnion('kind', [
   basicRuleSchema,
   tapHoldRuleSchema,
+  disableRuleSchema,
 ]);
 
 export type ValidatedHotkeyRule = z.infer<typeof hotkeyRuleSchema>;
@@ -72,9 +80,14 @@ export const appSchema = z
     category: z.enum([
       'Browsers',
       'Editors',
-      'Productivity',
+      'Terminals',
+      'Notes',
+      'Mail',
       'Communication',
+      'Design',
+      'Office',
       'Media',
+      'DevTools',
     ]),
     icon: z.string().min(1).max(8),
     platforms: z.array(platformSchema).nonempty().optional(),

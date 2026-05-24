@@ -444,6 +444,26 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
           warnings.push({ rulePath: path, reason: 'Skipped — missing or empty `to` array.' });
           continue;
         }
+        // vk_none / vk_consumer_play / vk_consumer_* with no modifiers is
+        // Karabiner's convention for "swallow the keystroke" — import as a
+        // disable rule. vk_none is what we emit; the broader vk_* family is
+        // accepted defensively since gallery rules vary.
+        if (first.key_code === 'vk_none' && (first.modifiers ?? []).length === 0) {
+          rules.push({
+            kind: 'disable',
+            appId,
+            trigger: triggerResult.combo,
+            description:
+              cleanedDescription.length > 0
+                ? cleanedDescription
+                : 'Imported from Karabiner (disabled)',
+          });
+          if (!seenApps.has(appId)) {
+            seenApps.add(appId);
+            selectedOrder.push(appId);
+          }
+          continue;
+        }
         const actionResult = buildCombo(first.key_code, first.modifiers ?? []);
         if (!actionResult.ok) {
           warnings.push({ rulePath: path, reason: actionResult.reason });

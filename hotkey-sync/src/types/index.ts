@@ -12,12 +12,23 @@ export type OS = 'windows' | 'mac';
  */
 export type Platform = 'windows' | 'mac';
 
+/**
+ * 10-category taxonomy (Phase B, 2026-05-22). Each name is short so the
+ * picker's TabsList stays readable. "Editors" covers code editors AND IDEs.
+ * "Notes" covers personal knowledge and AI assistants. "Mail" covers email
+ * and calendar apps. "DevTools" covers system launchers / file managers / cloud sync.
+ */
 export type AppCategory =
   | 'Browsers'
   | 'Editors'
-  | 'Productivity'
+  | 'Terminals'
+  | 'Notes'
+  | 'Mail'
   | 'Communication'
-  | 'Media';
+  | 'Design'
+  | 'Office'
+  | 'Media'
+  | 'DevTools';
 
 export interface App {
   id: string;
@@ -83,7 +94,26 @@ export interface TapHoldHotkeyRule {
   description: string;
 }
 
-export type HotkeyRule = BasicHotkeyRule | TapHoldHotkeyRule;
+/**
+ * Disable a trigger combo for a given app — the trigger simply does nothing
+ * when pressed inside that app's window.
+ *
+ * Karabiner emits `to: [{ "key_code": "vk_none" }]` (its conventional swallow
+ * sentinel). AHK emits `Trigger:: return` (early-returns before the default
+ * action fires).
+ *
+ * Use cases (Reddit + Karabiner gallery validated): Firefox Ctrl+Q quit-trap,
+ * macOS Cmd+Space when using Alfred/Raycast, Cursor Cmd+Shift+L (was VS Code
+ * line-duplicate).
+ */
+export interface DisableHotkeyRule {
+  kind: 'disable';
+  appId: string;
+  trigger: string;
+  description: string;
+}
+
+export type HotkeyRule = BasicHotkeyRule | TapHoldHotkeyRule | DisableHotkeyRule;
 
 export const TAP_HOLD_DEFAULT_TIMEOUT_MS = 200;
 export const TAP_HOLD_MIN_TIMEOUT_MS = 50;

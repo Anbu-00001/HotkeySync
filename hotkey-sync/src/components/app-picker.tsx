@@ -44,9 +44,14 @@ const APPS = appsData as App[];
 const CATEGORIES: readonly AppCategory[] = [
   'Browsers',
   'Editors',
-  'Productivity',
+  'Terminals',
+  'Notes',
+  'Mail',
   'Communication',
+  'Design',
+  'Office',
   'Media',
+  'DevTools',
 ] as const;
 
 type CategoryFilter = 'All' | AppCategory;

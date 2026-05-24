@@ -93,14 +93,47 @@ describe('apps.json — catalogue invariants', () => {
     const known = new Set([
       'Browsers',
       'Editors',
-      'Productivity',
+      'Terminals',
+      'Notes',
+      'Mail',
       'Communication',
+      'Design',
+      'Office',
       'Media',
+      'DevTools',
     ]);
     for (const app of APPS) {
       expect(known.has(app.category), `Unknown category for "${app.id}"`).toBe(
         true,
       );
+    }
+  });
+
+  it('JetBrains bundleIds share the com.jetbrains.* prefix (inconsistent casing is allowed)', () => {
+    // WebStorm + CLion preserve CamelCase in their bundle ids; IDEA, PyCharm,
+    // GoLand etc. go lowercase. This invariant catches typos like
+    // "com.jetBrains.intellij" but does NOT enforce a uniform case rule.
+    const jetbrains = APPS.filter((a) => a.bundleId?.startsWith('com.jetbrains.'));
+    for (const app of jetbrains) {
+      expect(app.bundleId).toMatch(/^com\.jetbrains\.[A-Za-z][A-Za-z0-9]*$/);
+    }
+  });
+
+  it('platform-exclusive apps have the matching identifier ONLY', () => {
+    for (const app of APPS) {
+      const platforms = app.platforms ?? ['windows', 'mac'];
+      if (platforms.length === 1 && platforms[0] === 'mac') {
+        expect(
+          app.exeName,
+          `Mac-only app "${app.id}" should NOT have an exeName`,
+        ).toBeUndefined();
+      }
+      if (platforms.length === 1 && platforms[0] === 'windows') {
+        expect(
+          app.bundleId,
+          `Windows-only app "${app.id}" should NOT have a bundleId`,
+        ).toBeUndefined();
+      }
     }
   });
 });

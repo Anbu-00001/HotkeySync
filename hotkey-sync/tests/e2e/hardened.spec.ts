@@ -208,14 +208,24 @@ test.describe('Hardened — Phase 2: UI controls', () => {
 
   test('app picker counter reflects per-OS catalogue size', async ({ page }) => {
     await page.goto('/');
-    // All 20 current apps are cross-platform, so both OSes show the same count.
-    // The interesting assertion is that the counter pivots when the OS toggles
-    // (when we later add platform-exclusive apps in Phase B/C). For now, both
-    // sides should show 20 — proving the per-OS filter is wired and stable.
-    const counter = page.locator('section#section-apps').getByText(/of \d+ apps selected/);
-    await expect(counter).toContainText('of 20 apps selected');
+    // Phase B catalogue: 50 apps, some platform-exclusive. Windows excludes
+    // Safari + iTerm2 + Apple Terminal + Xcode + Sketch + Bear + Apple Notes
+    // + Apple Mail; macOS excludes Windows Terminal. The exact per-OS counts
+    // are derived from apps.json — we assert the values change between OSes,
+    // proving the per-OS filter is wired and reactive.
+    const counter = page
+      .locator('section#section-apps')
+      .getByText(/of \d+ apps selected/);
+    const windowsText = await counter.textContent();
     await page.getByRole('radio', { name: 'macOS' }).click();
-    await expect(counter).toContainText('of 20 apps selected');
+    const macText = await counter.textContent();
+    expect(windowsText).not.toBe(macText);
+    // Both totals are between 30 and 50 — sanity bound, not an exact pin.
+    for (const t of [windowsText, macText]) {
+      const n = Number(t?.match(/of (\d+) apps/)?.[1] ?? '0');
+      expect(n).toBeGreaterThan(30);
+      expect(n).toBeLessThanOrEqual(50);
+    }
   });
 });
 

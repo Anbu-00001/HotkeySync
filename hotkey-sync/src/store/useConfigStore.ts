@@ -151,7 +151,7 @@ export const useConfigStore = create<ConfigStore>()(
       addRule: (rule) =>
         set((state) => {
           const normalisedTrigger = normaliseTrigger(rule.trigger);
-          // Normalise every action-shaped field; both kinds use canonical combos.
+          // Normalise every action-shaped field; all kinds use canonical combos.
           const next: HotkeyRule =
             rule.kind === 'basic'
               ? {
@@ -159,12 +159,14 @@ export const useConfigStore = create<ConfigStore>()(
                   trigger: normalisedTrigger,
                   action: normaliseTrigger(rule.action),
                 }
-              : {
-                  ...rule,
-                  trigger: normalisedTrigger,
-                  tapAction: normaliseTrigger(rule.tapAction),
-                  holdAction: normaliseTrigger(rule.holdAction),
-                };
+              : rule.kind === 'tap_hold'
+                ? {
+                    ...rule,
+                    trigger: normalisedTrigger,
+                    tapAction: normaliseTrigger(rule.tapAction),
+                    holdAction: normaliseTrigger(rule.holdAction),
+                  }
+                : { ...rule, trigger: normalisedTrigger };
           const existingIndex = state.rules.findIndex(
             (r) => r.appId === next.appId && r.trigger === normalisedTrigger,
           );
@@ -197,7 +199,7 @@ export const useConfigStore = create<ConfigStore>()(
                   ? normaliseTrigger(updates.action)
                   : current.action,
             };
-          } else {
+          } else if (current.kind === 'tap_hold') {
             merged = {
               ...current,
               description: updates.description ?? current.description,
@@ -213,6 +215,12 @@ export const useConfigStore = create<ConfigStore>()(
                 updates.tapTimeoutMs !== undefined
                   ? updates.tapTimeoutMs
                   : current.tapTimeoutMs,
+            };
+          } else {
+            // 'disable' — only description is editable; trigger is locked.
+            merged = {
+              ...current,
+              description: updates.description ?? current.description,
             };
           }
           const next = state.rules.slice();
@@ -249,12 +257,14 @@ export const useConfigStore = create<ConfigStore>()(
                     trigger: normalisedTrigger,
                     action: normaliseTrigger(rule.action),
                   }
-                : {
-                    ...rule,
-                    trigger: normalisedTrigger,
-                    tapAction: normaliseTrigger(rule.tapAction),
-                    holdAction: normaliseTrigger(rule.holdAction),
-                  };
+                : rule.kind === 'tap_hold'
+                  ? {
+                      ...rule,
+                      trigger: normalisedTrigger,
+                      tapAction: normaliseTrigger(rule.tapAction),
+                      holdAction: normaliseTrigger(rule.holdAction),
+                    }
+                  : { ...rule, trigger: normalisedTrigger };
             const index = rules.findIndex(
               (r) => r.appId === next.appId && r.trigger === normalisedTrigger,
             );

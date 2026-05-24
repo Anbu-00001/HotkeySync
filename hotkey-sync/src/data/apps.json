@@ -30,6 +30,42 @@
     "aliases": ["edge"]
   },
   {
+    "id": "safari",
+    "name": "Safari",
+    "bundleId": "com.apple.Safari",
+    "category": "Browsers",
+    "icon": "🧭",
+    "platforms": ["mac"]
+  },
+  {
+    "id": "brave",
+    "name": "Brave",
+    "exeName": "brave.exe",
+    "bundleId": "com.brave.Browser",
+    "category": "Browsers",
+    "icon": "🦁",
+    "platforms": ["windows", "mac"]
+  },
+  {
+    "id": "vivaldi",
+    "name": "Vivaldi",
+    "exeName": "vivaldi.exe",
+    "bundleId": "com.vivaldi.Vivaldi",
+    "category": "Browsers",
+    "icon": "🎻",
+    "platforms": ["windows", "mac"]
+  },
+  {
+    "id": "zen-browser",
+    "name": "Zen Browser",
+    "exeName": "zen.exe",
+    "bundleId": "app.zen-browser.zen",
+    "category": "Browsers",
+    "icon": "🧘",
+    "platforms": ["windows", "mac"],
+    "aliases": ["zen"]
+  },
+  {
     "id": "vs-code",
     "name": "VS Code",
     "exeName": "Code.exe",
@@ -59,11 +95,127 @@
     "platforms": ["windows", "mac"]
   },
   {
+    "id": "zed",
+    "name": "Zed",
+    "exeName": "zed.exe",
+    "bundleId": "dev.zed.Zed",
+    "category": "Editors",
+    "icon": "⚡",
+    "platforms": ["windows", "mac"]
+  },
+  {
+    "id": "intellij-idea",
+    "name": "IntelliJ IDEA",
+    "exeName": "idea64.exe",
+    "bundleId": "com.jetbrains.intellij",
+    "category": "Editors",
+    "icon": "🧠",
+    "platforms": ["windows", "mac"],
+    "aliases": ["intellij", "idea"]
+  },
+  {
+    "id": "pycharm",
+    "name": "PyCharm",
+    "exeName": "pycharm64.exe",
+    "bundleId": "com.jetbrains.pycharm",
+    "category": "Editors",
+    "icon": "🐍",
+    "platforms": ["windows", "mac"]
+  },
+  {
+    "id": "webstorm",
+    "name": "WebStorm",
+    "exeName": "webstorm64.exe",
+    "bundleId": "com.jetbrains.WebStorm",
+    "category": "Editors",
+    "icon": "🕸️",
+    "platforms": ["windows", "mac"]
+  },
+  {
+    "id": "goland",
+    "name": "GoLand",
+    "exeName": "goland64.exe",
+    "bundleId": "com.jetbrains.goland",
+    "category": "Editors",
+    "icon": "🦫",
+    "platforms": ["windows", "mac"]
+  },
+  {
+    "id": "fleet",
+    "name": "JetBrains Fleet",
+    "exeName": "Fleet.exe",
+    "bundleId": "com.jetbrains.fleet",
+    "category": "Editors",
+    "icon": "🚀",
+    "platforms": ["windows", "mac"],
+    "aliases": ["fleet"]
+  },
+  {
+    "id": "android-studio",
+    "name": "Android Studio",
+    "exeName": "studio64.exe",
+    "bundleId": "com.google.android.studio",
+    "category": "Editors",
+    "icon": "🤖",
+    "platforms": ["windows", "mac"]
+  },
+  {
+    "id": "xcode",
+    "name": "Xcode",
+    "bundleId": "com.apple.dt.Xcode",
+    "category": "Editors",
+    "icon": "🔨",
+    "platforms": ["mac"]
+  },
+  {
+    "id": "warp",
+    "name": "Warp",
+    "exeName": "warp.exe",
+    "bundleId": "dev.warp.Warp-Stable",
+    "category": "Terminals",
+    "icon": "⚡",
+    "platforms": ["windows", "mac"]
+  },
+  {
+    "id": "iterm2",
+    "name": "iTerm2",
+    "bundleId": "com.googlecode.iterm2",
+    "category": "Terminals",
+    "icon": "⌨️",
+    "platforms": ["mac"],
+    "aliases": ["iterm"]
+  },
+  {
+    "id": "apple-terminal",
+    "name": "Terminal",
+    "bundleId": "com.apple.Terminal",
+    "category": "Terminals",
+    "icon": "⬛",
+    "platforms": ["mac"]
+  },
+  {
+    "id": "windows-terminal",
+    "name": "Windows Terminal",
+    "exeName": "WindowsTerminal.exe",
+    "category": "Terminals",
+    "icon": "🪟",
+    "platforms": ["windows"]
+  },
+  {
+    "id": "alacritty",
+    "name": "Alacritty",
+    "exeName": "alacritty.exe",
+    "bundleId": "io.alacritty",
+    "category": "Terminals",
+    "icon": "🦎",
+    "platforms": ["windows", "mac"]
+  },
+  {
     "id": "notion",
     "name": "Notion",
     "exeName": "Notion.exe",
     "bundleId": "notion.id",
-    "category": "Productivity",
+    "category": "Notes",
     "icon": "📋",
     "platforms": ["windows", "mac"]
   },
@@ -72,39 +224,64 @@
     "name": "Obsidian",
     "exeName": "Obsidian.exe",
     "bundleId": "md.obsidian",
-    "category": "Productivity",
+    "category": "Notes",
     "icon": "🔮",
     "platforms": ["windows", "mac"]
   },
   {
-    "id": "microsoft-excel",
-    "name": "Microsoft Excel",
-    "exeName": "EXCEL.EXE",
-    "bundleId": "com.microsoft.Excel",
-    "category": "Productivity",
-    "icon": "📊",
-    "platforms": ["windows", "mac"],
-    "aliases": ["excel"]
+    "id": "linear",
+    "name": "Linear",
+    "exeName": "Linear.exe",
+    "bundleId": "com.linear",
+    "category": "Notes",
+    "icon": "📐",
+    "platforms": ["windows", "mac"]
   },
   {
-    "id": "microsoft-word",
-    "name": "Microsoft Word",
-    "exeName": "WINWORD.EXE",
-    "bundleId": "com.microsoft.Word",
-    "category": "Productivity",
-    "icon": "📄",
-    "platforms": ["windows", "mac"],
-    "aliases": ["word"]
+    "id": "bear",
+    "name": "Bear",
+    "bundleId": "net.shinyfrog.bear",
+    "category": "Notes",
+    "icon": "🐻",
+    "platforms": ["mac"]
   },
   {
-    "id": "microsoft-powerpoint",
-    "name": "Microsoft PowerPoint",
-    "exeName": "POWERPNT.EXE",
-    "bundleId": "com.microsoft.Powerpoint",
-    "category": "Productivity",
-    "icon": "📑",
+    "id": "apple-notes",
+    "name": "Apple Notes",
+    "bundleId": "com.apple.Notes",
+    "category": "Notes",
+    "icon": "🗒️",
+    "platforms": ["mac"],
+    "aliases": ["notes"]
+  },
+  {
+    "id": "onenote",
+    "name": "Microsoft OneNote",
+    "exeName": "ONENOTE.EXE",
+    "bundleId": "com.microsoft.onenote.mac",
+    "category": "Notes",
+    "icon": "📓",
     "platforms": ["windows", "mac"],
-    "aliases": ["powerpoint", "ppt"]
+    "aliases": ["onenote"]
+  },
+  {
+    "id": "outlook",
+    "name": "Microsoft Outlook",
+    "exeName": "OUTLOOK.EXE",
+    "bundleId": "com.microsoft.Outlook",
+    "category": "Mail",
+    "icon": "📨",
+    "platforms": ["windows", "mac"],
+    "aliases": ["outlook"]
+  },
+  {
+    "id": "apple-mail",
+    "name": "Mail",
+    "bundleId": "com.apple.mail",
+    "category": "Mail",
+    "icon": "✉️",
+    "platforms": ["mac"],
+    "aliases": ["apple mail"]
   },
   {
     "id": "slack",
@@ -130,7 +307,8 @@
     "exeName": "Zoom.exe",
     "bundleId": "us.zoom.xos",
     "category": "Communication",
-    "icon": "📹"
+    "icon": "📹",
+    "platforms": ["windows", "mac"]
   },
   {
     "id": "microsoft-teams",
@@ -141,6 +319,99 @@
     "icon": "👥",
     "platforms": ["windows", "mac"],
     "aliases": ["teams", "msteams"]
+  },
+  {
+    "id": "telegram",
+    "name": "Telegram",
+    "exeName": "Telegram.exe",
+    "bundleId": "ru.keepcoder.Telegram",
+    "category": "Communication",
+    "icon": "✈️",
+    "platforms": ["windows", "mac"]
+  },
+  {
+    "id": "signal",
+    "name": "Signal",
+    "exeName": "Signal.exe",
+    "bundleId": "org.whispersystems.signal-desktop",
+    "category": "Communication",
+    "icon": "🔐",
+    "platforms": ["windows", "mac"]
+  },
+  {
+    "id": "whatsapp",
+    "name": "WhatsApp",
+    "exeName": "WhatsApp.exe",
+    "bundleId": "net.whatsapp.WhatsApp",
+    "category": "Communication",
+    "icon": "🟢",
+    "platforms": ["windows", "mac"]
+  },
+  {
+    "id": "figma",
+    "name": "Figma",
+    "exeName": "Figma.exe",
+    "bundleId": "com.figma.Desktop",
+    "category": "Design",
+    "icon": "🎨",
+    "platforms": ["windows", "mac"]
+  },
+  {
+    "id": "photoshop",
+    "name": "Adobe Photoshop",
+    "exeName": "Photoshop.exe",
+    "bundleId": "com.adobe.Photoshop",
+    "category": "Design",
+    "icon": "🖼️",
+    "platforms": ["windows", "mac"],
+    "aliases": ["photoshop", "ps"]
+  },
+  {
+    "id": "sketch",
+    "name": "Sketch",
+    "bundleId": "com.bohemiancoding.sketch3",
+    "category": "Design",
+    "icon": "💎",
+    "platforms": ["mac"]
+  },
+  {
+    "id": "blender",
+    "name": "Blender",
+    "exeName": "blender.exe",
+    "bundleId": "org.blenderfoundation.blender",
+    "category": "Design",
+    "icon": "🧊",
+    "platforms": ["windows", "mac"]
+  },
+  {
+    "id": "microsoft-excel",
+    "name": "Microsoft Excel",
+    "exeName": "EXCEL.EXE",
+    "bundleId": "com.microsoft.Excel",
+    "category": "Office",
+    "icon": "📊",
+    "platforms": ["windows", "mac"],
+    "aliases": ["excel"]
+  },
+  {
+    "id": "microsoft-word",
+    "name": "Microsoft Word",
+    "exeName": "WINWORD.EXE",
+    "bundleId": "com.microsoft.Word",
+    "category": "Office",
+    "icon": "📄",
+    "platforms": ["windows", "mac"],
+    "aliases": ["word"]
+  },
+  {
+    "id": "microsoft-powerpoint",
+    "name": "Microsoft PowerPoint",
+    "exeName": "POWERPNT.EXE",
+    "bundleId": "com.microsoft.Powerpoint",
+    "category": "Office",
+    "icon": "📑",
+    "platforms": ["windows", "mac"],
+    "aliases": ["powerpoint", "ppt"]
   },
   {
     "id": "spotify",
@@ -161,30 +432,32 @@
     "platforms": ["windows", "mac"]
   },
   {
-    "id": "figma",
-    "name": "Figma",
-    "exeName": "Figma.exe",
-    "bundleId": "com.figma.Desktop",
-    "category": "Media",
-    "icon": "🎨",
+    "id": "docker-desktop",
+    "name": "Docker Desktop",
+    "exeName": "Docker Desktop.exe",
+    "bundleId": "com.docker.docker",
+    "category": "DevTools",
+    "icon": "🐳",
+    "platforms": ["windows", "mac"],
+    "aliases": ["docker"]
+  },
+  {
+    "id": "raycast",
+    "name": "Raycast",
+    "exeName": "Raycast.exe",
+    "bundleId": "com.raycast.macos",
+    "category": "DevTools",
+    "icon": "🔦",
     "platforms": ["windows", "mac"]
   },
   {
-    "id": "linear",
-    "name": "Linear",
-    "exeName": "Linear.exe",
-    "bundleId": "com.linear",
-    "category": "Productivity",
-    "icon": "📐",
-    "platforms": ["windows", "mac"]
-  },
-  {
-    "id": "warp",
-    "name": "Warp",
-    "exeName": "warp.exe",
-    "bundleId": "dev.warp.Warp-Stable",
-    "category": "Productivity",
-    "icon": "⚡",
-    "platforms": ["windows", "mac"]
+    "id": "github-desktop",
+    "name": "GitHub Desktop",
+    "exeName": "GitHubDesktop.exe",
+    "bundleId": "com.github.GitHubClient",
+    "category": "DevTools",
+    "icon": "🐙",
+    "platforms": ["windows", "mac"],
+    "aliases": ["github"]
   }
 ]

@@ -105,6 +105,21 @@ export function generateAHK(config: Config): string {
     blocks.push(`; ═══ ${app.name} ═══`);
     blocks.push(`#HotIf WinActive("ahk_exe ${app.exeName}")`);
     for (const rule of appRules) {
+      if (rule.kind === 'disable') {
+        let triggerStr: string;
+        try {
+          triggerStr = comboToAHK(parseKeyCombo(rule.trigger));
+        } catch {
+          blocks.push(
+            `; Skipped malformed disable rule (trigger="${rule.trigger}")`,
+          );
+          continue;
+        }
+        // `return` exits the hotkey handler before the OS sees the keystroke,
+        // effectively swallowing it. AHK community canonical pattern.
+        blocks.push(`${triggerStr}:: return  ; ${rule.description} (disabled)`);
+        continue;
+      }
       if (rule.kind === 'tap_hold') {
         let triggerStr: string;
         let tapStr: string;
