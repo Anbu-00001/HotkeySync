@@ -4,6 +4,7 @@ import {
   SUGGESTIONS_COUNT,
   suggestRules,
 } from '@/lib/suggestions';
+import { hotkeyRuleSchema } from '@/lib/schemas';
 import appsData from '@/data/apps.json';
 import type { App, HotkeyRule } from '@/types';
 
@@ -33,6 +34,32 @@ describe('suggestions catalogue invariants', () => {
 
   it('SUGGESTIONS_COUNT matches allSuggestions().length', () => {
     expect(SUGGESTIONS_COUNT).toBe(allSuggestions().length);
+  });
+
+  it('every suggestion rule passes hotkeyRuleSchema validation (Wave 2.5)', () => {
+    for (const s of allSuggestions()) {
+      const result = hotkeyRuleSchema.safeParse(s.rule);
+      if (!result.success) {
+        console.error(s.id, result.error.issues);
+      }
+      expect(result.success, `suggestion "${s.id}" failed schema`).toBe(true);
+    }
+  });
+
+  it('rejects exceptApps on a non-global rule (Wave 2.5 refinement)', () => {
+    const bogus = {
+      kind: 'basic' as const,
+      appId: 'google-chrome',
+      trigger: 'ctrl+p',
+      action: 'ctrl+comma',
+      description: 'should not validate',
+      exceptApps: ['vs-code'],
+    };
+    const result = hotkeyRuleSchema.safeParse(bogus);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toMatch(/exceptApps/);
+    }
   });
 });
 

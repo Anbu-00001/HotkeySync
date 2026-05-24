@@ -101,7 +101,9 @@ describe('AHK importer — hand-written / messy input', () => {
     expect(out.rules[0].description).toBe('Imported from AHK');
   });
 
-  it('skips rules outside any #HotIf block and records a warning', () => {
+  it('imports rules outside any #HotIf block as global (Wave 2.5)', () => {
+    // After Wave 2.5 AHK semantics are respected: rules outside any #HotIf
+    // are global, anchored to the __global sentinel.
     const ahk = `
 ^p:: Send("^,")
 #HotIf WinActive("ahk_exe chrome.exe")
@@ -109,9 +111,17 @@ describe('AHK importer — hand-written / messy input', () => {
 #HotIf
 `;
     const out = parseAHK(ahk);
-    expect(out.rules).toHaveLength(1);
-    expect(out.warnings.length).toBeGreaterThanOrEqual(1);
-    expect(out.warnings[0].reason).toMatch(/outside.*#HotIf/i);
+    expect(out.rules).toHaveLength(2);
+    expect(out.rules[0]).toMatchObject({
+      kind: 'basic',
+      appId: '__global',
+      trigger: 'ctrl+p',
+    });
+    expect(out.rules[1]).toMatchObject({
+      kind: 'basic',
+      appId: 'google-chrome',
+      trigger: 'ctrl+w',
+    });
   });
 
   it('reports unknown app exes as warnings, not crashes', () => {
@@ -300,10 +310,14 @@ describe('AHK round-trip — disable kind', () => {
     });
   });
 
-  it('warns and skips a disable line outside any #HotIf block', () => {
+  it('imports a disable line outside any #HotIf block as global (Wave 2.5)', () => {
     const src = '^q:: return\n';
     const out = parseAHK(src);
-    expect(out.rules).toHaveLength(0);
-    expect(out.warnings.some((w) => /outside any #HotIf/.test(w.reason))).toBe(true);
+    expect(out.rules).toHaveLength(1);
+    expect(out.rules[0]).toMatchObject({
+      kind: 'disable',
+      appId: '__global',
+      trigger: 'ctrl+q',
+    });
   });
 });

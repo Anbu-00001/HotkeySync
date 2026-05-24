@@ -31,6 +31,8 @@ describe('apps.json — catalogue invariants', () => {
 
   it('every Windows-platformed app has a non-empty exeName', () => {
     for (const app of APPS) {
+      // The global sentinel intentionally lacks exeName / bundleId.
+      if (app.id === '__global') continue;
       const platforms = app.platforms ?? ['windows', 'mac'];
       if (platforms.includes('windows')) {
         expect(
@@ -43,6 +45,7 @@ describe('apps.json — catalogue invariants', () => {
 
   it('every macOS-platformed app has a non-empty bundleId', () => {
     for (const app of APPS) {
+      if (app.id === '__global') continue;
       const platforms = app.platforms ?? ['windows', 'mac'];
       if (platforms.includes('mac')) {
         expect(

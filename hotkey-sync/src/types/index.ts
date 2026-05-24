@@ -75,6 +75,22 @@ export interface App {
   lockedShortcuts?: boolean;
 }
 
+/**
+ * Sentinel app id for rules that apply across all apps. Modelled after the
+ * Karabiner convention of omitting `frontmost_application_if` (and using
+ * `frontmost_application_unless` for exceptions). On every rule variant, when
+ * `appId === GLOBAL_APP_ID`, `exceptApps` becomes meaningful: the rule applies
+ * everywhere EXCEPT those bundle ids / exe names.
+ *
+ * Why a sentinel and not e.g. `'*'` or an empty array:
+ *   - Grep-friendly (`grep __global`).
+ *   - Narrows cleanly in TypeScript discriminated unions.
+ *   - Mirrors patterns used by ryoppippi/karabiner.ts + bezbac/dotfiles in the
+ *     real world (see project_global_rules_research.md).
+ */
+export const GLOBAL_APP_ID = '__global' as const;
+export type GlobalAppId = typeof GLOBAL_APP_ID;
+
 /** Standard remap: trigger fires action, replacing the OS default. */
 export interface BasicHotkeyRule {
   kind: 'basic';
@@ -82,6 +98,12 @@ export interface BasicHotkeyRule {
   trigger: string;
   action: string;
   description: string;
+  /**
+   * Apps to exclude when `appId === GLOBAL_APP_ID`. Each entry is a HotkeySync
+   * app id (resolved to bundle id on macOS / exe name on Windows by the
+   * generator). Ignored when appId is not the sentinel.
+   */
+  exceptApps?: readonly string[];
 }
 
 /**
@@ -106,6 +128,8 @@ export interface TapHoldHotkeyRule {
   holdAction: string;
   tapTimeoutMs: number;
   description: string;
+  /** See BasicHotkeyRule.exceptApps. */
+  exceptApps?: readonly string[];
 }
 
 /**
@@ -125,6 +149,8 @@ export interface DisableHotkeyRule {
   appId: string;
   trigger: string;
   description: string;
+  /** See BasicHotkeyRule.exceptApps. */
+  exceptApps?: readonly string[];
 }
 
 export type HotkeyRule = BasicHotkeyRule | TapHoldHotkeyRule | DisableHotkeyRule;

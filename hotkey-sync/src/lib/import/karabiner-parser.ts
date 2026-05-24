@@ -17,6 +17,7 @@ import {
   TAP_HOLD_DEFAULT_TIMEOUT_MS,
   TAP_HOLD_MIN_TIMEOUT_MS,
   TAP_HOLD_MAX_TIMEOUT_MS,
+  GLOBAL_APP_ID,
 } from '@/types';
 import {
   serializeKeyCombo,
@@ -233,41 +234,77 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
       const frontmost = conditions.find(
         (c) => c.type === 'frontmost_application_if',
       );
-      if (!frontmost) {
-        warnings.push({
-          rulePath: path,
-          reason: 'Skipped — no frontmost_application_if condition (HotkeySync rules are per-app).',
-        });
-        continue;
+      const frontmostUnless = conditions.find(
+        (c) => c.type === 'frontmost_application_unless',
+      );
+
+      let appId: string;
+      let exceptApps: string[] | undefined;
+
+      if (frontmost) {
+        // Per-app rule.
+        const bundlePatterns = frontmost.bundle_identifiers ?? [];
+        if (bundlePatterns.length === 0) {
+          warnings.push({ rulePath: path, reason: 'Skipped — empty bundle_identifiers.' });
+          continue;
+        }
+        if (bundlePatterns.length > 1) {
+          warnings.push({
+            rulePath: path,
+            reason: `Source rule covers ${bundlePatterns.length} apps; only the first will be imported.`,
+          });
+        }
+        const bundleId = unescapeBundleRegex(bundlePatterns[0]);
+        if (!bundleId) {
+          warnings.push({
+            rulePath: path,
+            reason: `Could not parse bundle_identifier regex "${bundlePatterns[0]}".`,
+          });
+          continue;
+        }
+        const resolved = BUNDLE_LOOKUP.get(bundleId.toLowerCase());
+        if (!resolved) {
+          unknownBundleIds.add(bundleId);
+          warnings.push({
+            rulePath: path,
+            reason: `Unknown bundle id "${bundleId}" — not in app catalog.`,
+          });
+          continue;
+        }
+        appId = resolved;
+      } else {
+        // No frontmost_application_if → global rule. Optionally an exclusion
+        // list via frontmost_application_unless.
+        appId = GLOBAL_APP_ID;
+        if (frontmostUnless) {
+          const resolvedExceptions: string[] = [];
+          const unknownExceptions: string[] = [];
+          for (const pat of frontmostUnless.bundle_identifiers ?? []) {
+            const bid = unescapeBundleRegex(pat);
+            if (!bid) {
+              unknownExceptions.push(pat);
+              continue;
+            }
+            const id = BUNDLE_LOOKUP.get(bid.toLowerCase());
+            if (id) resolvedExceptions.push(id);
+            else unknownExceptions.push(bid);
+          }
+          if (resolvedExceptions.length > 0) {
+            exceptApps = resolvedExceptions;
+          }
+          if (unknownExceptions.length > 0) {
+            warnings.push({
+              rulePath: path,
+              reason: `Global rule excludes ${unknownExceptions.length} unknown app(s) — those exclusions were dropped: ${unknownExceptions.slice(0, 3).join(', ')}${unknownExceptions.length > 3 ? '…' : ''}`,
+            });
+          }
+        }
       }
-      const bundlePatterns = frontmost.bundle_identifiers ?? [];
-      if (bundlePatterns.length === 0) {
-        warnings.push({ rulePath: path, reason: 'Skipped — empty bundle_identifiers.' });
-        continue;
-      }
-      if (bundlePatterns.length > 1) {
-        warnings.push({
-          rulePath: path,
-          reason: `Source rule covers ${bundlePatterns.length} apps; only the first will be imported.`,
-        });
-      }
-      const bundleId = unescapeBundleRegex(bundlePatterns[0]);
-      if (!bundleId) {
-        warnings.push({
-          rulePath: path,
-          reason: `Could not parse bundle_identifier regex "${bundlePatterns[0]}".`,
-        });
-        continue;
-      }
-      const appId = BUNDLE_LOOKUP.get(bundleId.toLowerCase());
-      if (!appId) {
-        unknownBundleIds.add(bundleId);
-        warnings.push({
-          rulePath: path,
-          reason: `Unknown bundle id "${bundleId}" — not in app catalog.`,
-        });
-        continue;
-      }
+
+      // Helper: attach exceptApps onto a rule literal iff present. Avoids
+      // sprinkling spread-and-conditional logic across every rules.push site.
+      const attachExcept = <R extends HotkeyRule>(r: R): R =>
+        exceptApps ? ({ ...r, exceptApps } as R) : r;
 
       const triggerResult = buildCombo(
         from.key_code,
@@ -382,7 +419,7 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
             reason: '`to` was present alongside `to_if_alone`/`to_if_held_down` and was ignored.',
           });
         }
-        rules.push({
+        rules.push(attachExcept({
           kind: 'tap_hold',
           appId,
           trigger: triggerResult.combo,
@@ -393,11 +430,11 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
             cleanedDescription.length > 0
               ? cleanedDescription
               : 'Imported from Karabiner',
-        });
+        }));
       } else if (hasAlone && !hasHeld && !hasTo) {
         const built = buildTapHold((m.to_if_alone ?? [])[0], null, 'alone-only');
         if (!built) continue;
-        rules.push({
+        rules.push(attachExcept({
           kind: 'tap_hold',
           appId,
           trigger: triggerResult.combo,
@@ -408,11 +445,11 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
             cleanedDescription.length > 0
               ? cleanedDescription
               : 'Imported from Karabiner',
-        });
+        }));
       } else if (hasAlone && hasTo && !hasHeld) {
         const built = buildTapHold((m.to_if_alone ?? [])[0], null, 'dual-role');
         if (!built) continue;
-        rules.push({
+        rules.push(attachExcept({
           kind: 'tap_hold',
           appId,
           trigger: triggerResult.combo,
@@ -423,7 +460,7 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
             cleanedDescription.length > 0
               ? cleanedDescription
               : 'Imported from Karabiner',
-        });
+        }));
       } else if (hasHeld && !hasAlone) {
         warnings.push({
           rulePath: path,
@@ -449,7 +486,7 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
         // disable rule. vk_none is what we emit; the broader vk_* family is
         // accepted defensively since gallery rules vary.
         if (first.key_code === 'vk_none' && (first.modifiers ?? []).length === 0) {
-          rules.push({
+          rules.push(attachExcept({
             kind: 'disable',
             appId,
             trigger: triggerResult.combo,
@@ -457,7 +494,7 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
               cleanedDescription.length > 0
                 ? cleanedDescription
                 : 'Imported from Karabiner (disabled)',
-          });
+          }));
           if (!seenApps.has(appId)) {
             seenApps.add(appId);
             selectedOrder.push(appId);
@@ -469,7 +506,7 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
           warnings.push({ rulePath: path, reason: actionResult.reason });
           continue;
         }
-        rules.push({
+        rules.push(attachExcept({
           kind: 'basic',
           appId,
           trigger: triggerResult.combo,
@@ -478,7 +515,7 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
             cleanedDescription.length > 0
               ? cleanedDescription
               : 'Imported from Karabiner',
-        });
+        }));
       } else {
         warnings.push({
           rulePath: path,

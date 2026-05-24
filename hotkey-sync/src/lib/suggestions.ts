@@ -16,6 +16,8 @@
  *   - or vim-style navigation in editors that lack it natively (tag: 'vim').
  */
 import type { HotkeyRule } from '@/types';
+import { GLOBAL_APP_ID } from '@/types';
+import { DEFAULT_GLOBAL_EXCEPTIONS } from '@/data/presets';
 
 export type SuggestionTag =
   | 'standardise'
@@ -273,6 +275,36 @@ const SUGGESTIONS: Suggestion[] = [
       appId: 'outlook',
       trigger: 'ctrl+return_or_enter',
       description: 'Stop Outlook auto-sending on Ctrl+Enter',
+    },
+  },
+  // Global rules (Wave 2.5). Both are the highest-signal candidates in the
+  // entire research corpus and ship with the canonical exclusion list
+  // pre-filled (terminals + screen share + Xcode).
+  {
+    id: 'global-caps-lock-escape',
+    tag: 'productivity',
+    rationale:
+      'Caps Lock as Escape is the most-imported single rule on the Karabiner gallery (HN canon + Sysinternals Ctrl2Cap). Stops accidental shouting and gives vim/modal-editor users a giant Esc key.',
+    rule: {
+      kind: 'basic',
+      appId: GLOBAL_APP_ID,
+      trigger: 'caps_lock',
+      action: 'escape',
+      description: 'Caps Lock → Escape',
+      exceptApps: DEFAULT_GLOBAL_EXCEPTIONS,
+    },
+  },
+  {
+    id: 'global-cmd-space-disable',
+    tag: 'safety',
+    rationale:
+      'macOS keeps reclaiming Cmd+Space for Spotlight even after Alfred/Raycast users disable it in System Settings. Disable it at the OS event layer so the launcher of your choice can claim it permanently.',
+    rule: {
+      kind: 'disable',
+      appId: GLOBAL_APP_ID,
+      trigger: 'meta+space',
+      description: 'Free Cmd+Space for Alfred/Raycast',
+      exceptApps: DEFAULT_GLOBAL_EXCEPTIONS,
     },
   },
   // Tap & Hold — single suggestion to lure users into trying it.

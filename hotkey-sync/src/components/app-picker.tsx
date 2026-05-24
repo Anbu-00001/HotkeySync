@@ -75,15 +75,22 @@ export function AppPicker(): React.JSX.Element {
 
   // Apps available on the currently-selected OS. Computed independently of
   // category/query so the "X of Y apps selected" counter reflects this OS,
-  // not the full multi-platform catalogue.
-  const appsForOS = React.useMemo(
-    () => APPS.filter((app) => appPlatforms(app).includes(os)),
-    [os],
-  );
+  // not the full multi-platform catalogue. The __global sentinel is always
+  // pinned to the head of the list so users can find it without scrolling.
+  const appsForOS = React.useMemo(() => {
+    const all = APPS.filter((app) => appPlatforms(app).includes(os));
+    return all.sort((a, b) => {
+      if (a.id === '__global') return -1;
+      if (b.id === '__global') return 1;
+      return 0;
+    });
+  }, [os]);
 
   const filtered = React.useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase();
     return appsForOS.filter((app) => {
+      // Show __global in every category tab — it's not really category-bound.
+      if (app.id === '__global') return appMatchesQuery(app, q);
       if (category !== 'All' && app.category !== category) return false;
       return appMatchesQuery(app, q);
     });

@@ -118,7 +118,9 @@ describe('Karabiner importer — failure modes', () => {
     expect(out.result.warnings[0].reason).toMatch(/not supported.*basic/);
   });
 
-  it('warns and skips rules with no frontmost_application_if condition', () => {
+  it('imports rules with no frontmost_application_if condition as global', () => {
+    // Karabiner treats "no conditions" as "applies in every frontmost app".
+    // After Wave 2.5 we mirror that: such a rule imports with appId = __global.
     const src = JSON.stringify({
       title: 'x',
       rules: [
@@ -138,8 +140,13 @@ describe('Karabiner importer — failure modes', () => {
     const out = parseKarabinerJSON(src);
     expect(out.ok).toBe(true);
     if (!out.ok) return;
-    expect(out.result.rules).toHaveLength(0);
-    expect(out.result.warnings[0].reason).toMatch(/per-app/);
+    expect(out.result.rules).toHaveLength(1);
+    expect(out.result.rules[0]).toMatchObject({
+      kind: 'basic',
+      appId: '__global',
+      trigger: 'ctrl+p',
+      action: 'ctrl+comma',
+    });
   });
 
   it('warns on unknown bundle ids and records them', () => {

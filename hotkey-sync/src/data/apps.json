@@ -1,5 +1,13 @@
 [
   {
+    "id": "__global",
+    "name": "All Apps (Global)",
+    "category": "DevTools",
+    "icon": "🌐",
+    "platforms": ["windows", "mac"],
+    "aliases": ["global", "all apps", "everywhere"]
+  },
+  {
     "id": "google-chrome",
     "name": "Google Chrome",
     "exeName": "chrome.exe",

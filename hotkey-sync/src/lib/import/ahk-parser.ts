@@ -23,6 +23,7 @@ import {
   TAP_HOLD_DEFAULT_TIMEOUT_MS,
   TAP_HOLD_MIN_TIMEOUT_MS,
   TAP_HOLD_MAX_TIMEOUT_MS,
+  GLOBAL_APP_ID,
 } from '@/types';
 import {
   serializeKeyCombo,
@@ -73,6 +74,8 @@ const NAMED_KEY_REVERSE: Record<string, TriggerKey> = {
   f1: 'f1', f2: 'f2', f3: 'f3', f4: 'f4',
   f5: 'f5', f6: 'f6', f7: 'f7', f8: 'f8',
   f9: 'f9', f10: 'f10', f11: 'f11', f12: 'f12',
+  capslock: 'caps_lock',
+  caps_lock: 'caps_lock',
 };
 
 // Single-char symbol → TriggerKey.
@@ -165,6 +168,15 @@ export interface AHKImportResult {
 
 const HOTIF_RX = /^#HotIf\s+WinActive\(["']ahk_exe\s+([^"')]+)["']\)/i;
 const HOTIF_BARE_RX = /^#HotIf\s*$/i;
+/**
+ * Matches a HotkeySync-emitted global-with-exceptions directive, e.g.
+ *   `#HotIf !(WinActive("ahk_exe a.exe") || WinActive("ahk_exe b.exe"))`
+ * Captures the inner string; we then split it on `||` and pull exe names.
+ */
+const HOTIF_GLOBAL_NOT_RX = /^#HotIf\s+!\(\s*(WinActive\([^)]*\)(?:\s*\|\|\s*WinActive\([^)]*\))*)\s*\)/i;
+const WIN_ACTIVE_EXE_RX = /WinActive\(["']ahk_exe\s+([^"')]+)["']\)/gi;
+// Lowercased exeName → appId lookup is initialised below; we capture it here
+// so HOTIF_GLOBAL_NOT_RX parsing can resolve excluded exes to app ids.
 const RULE_RX =
   /^(\S+?)::\s*Send\(\s*["']([^"']*)["']\s*\)\s*(?:;(.*))?$/;
 /**
@@ -189,7 +201,17 @@ export function parseAHK(source: string): AHKImportResult {
   const selectedOrder: string[] = [];
   const seenApps = new Set<string>();
 
-  let currentAppId: string | null = null;
+  // Scope tracking. Three states:
+  //   - currentAppId = string  → we're inside `#HotIf WinActive(known_exe)`
+  //                              OR inside `#HotIf !(...)` (then appId === __global)
+  //                              OR we've never seen any #HotIf (implicit global)
+  //   - currentAppId = null    → we just hit an unknown-exe #HotIf; subsequent
+  //                              rules until the next #HotIf reset/known are
+  //                              warned-and-skipped (preserves user intent)
+  //   - currentExceptApps set  → only when inside `#HotIf !(WinActive ...)`,
+  //                              the exclusion list to attach to each rule
+  let currentAppId: string | null = GLOBAL_APP_ID;
+  let currentExceptApps: string[] | null = null;
   const lines = source.split(/\r?\n/);
 
   for (let idx = 0; idx < lines.length; idx++) {
@@ -211,9 +233,11 @@ export function parseAHK(source: string): AHKImportResult {
           reason: `Unknown exeName "${exe}" — not in app catalog. Rules inside this block will be skipped.`,
         });
         currentAppId = null;
+        currentExceptApps = null;
         continue;
       }
       currentAppId = appId;
+      currentExceptApps = null;
       if (!seenApps.has(appId)) {
         seenApps.add(appId);
         selectedOrder.push(appId);
@@ -221,8 +245,40 @@ export function parseAHK(source: string): AHKImportResult {
       continue;
     }
 
+    // #HotIf !(WinActive("ahk_exe a.exe") || WinActive(...)) — global-with-exceptions
+    const hotIfGlobalNot = line.match(HOTIF_GLOBAL_NOT_RX);
+    if (hotIfGlobalNot) {
+      const inner = hotIfGlobalNot[1];
+      const exes: string[] = [];
+      const unknownExceptions: string[] = [];
+      let match: RegExpExecArray | null;
+      const rx = new RegExp(WIN_ACTIVE_EXE_RX.source, 'gi');
+      while ((match = rx.exec(inner)) !== null) {
+        const exe = match[1].trim();
+        const id = EXE_LOOKUP.get(exe.toLowerCase());
+        if (id) exes.push(id);
+        else unknownExceptions.push(exe);
+      }
+      currentAppId = GLOBAL_APP_ID;
+      currentExceptApps = exes.length > 0 ? exes : null;
+      if (!seenApps.has(GLOBAL_APP_ID)) {
+        seenApps.add(GLOBAL_APP_ID);
+        selectedOrder.push(GLOBAL_APP_ID);
+      }
+      if (unknownExceptions.length > 0) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: `Global rule excludes ${unknownExceptions.length} unknown exe(s) — those exclusions were dropped: ${unknownExceptions.slice(0, 3).join(', ')}${unknownExceptions.length > 3 ? '…' : ''}`,
+        });
+      }
+      continue;
+    }
+
     if (HOTIF_BARE_RX.test(line)) {
-      currentAppId = null;
+      // Resetting #HotIf means "back to global scope".
+      currentAppId = GLOBAL_APP_ID;
+      currentExceptApps = null;
       continue;
     }
 
@@ -239,14 +295,6 @@ export function parseAHK(source: string): AHKImportResult {
         // Strip the "(disabled)" suffix our generator appends so re-edits read cleanly.
         .replace(/\s*\(disabled\)\s*$/i, '')
         .trim();
-      if (!currentAppId) {
-        warnings.push({
-          line: idx + 1,
-          text: raw,
-          reason: 'disable rule outside any #HotIf WinActive block — skipped.',
-        });
-        continue;
-      }
       const disTrigger = parseAHKKeyExpression(disTriggerExpr);
       if (!disTrigger) {
         warnings.push({
@@ -256,11 +304,25 @@ export function parseAHK(source: string): AHKImportResult {
         });
         continue;
       }
+      if (currentAppId === null) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: 'disable rule inside an unresolved-app #HotIf block — skipped.',
+        });
+        continue;
+      }
+      const disAppId = currentAppId;
+      if (!seenApps.has(disAppId)) {
+        seenApps.add(disAppId);
+        selectedOrder.push(disAppId);
+      }
       rules.push({
         kind: 'disable',
-        appId: currentAppId,
+        appId: disAppId,
         trigger: disTrigger.combo,
         description: disDescription.length > 0 ? disDescription : 'Imported from AHK (disabled)',
+        ...(currentExceptApps ? { exceptApps: currentExceptApps } : {}),
       });
       continue;
     }
@@ -272,14 +334,6 @@ export function parseAHK(source: string): AHKImportResult {
       const [, thTriggerExpr, msStr, thTapExpr, thHoldExpr, thDescriptionRaw] =
         tapHoldMatch;
       const thDescription = (thDescriptionRaw ?? '').trim();
-      if (!currentAppId) {
-        warnings.push({
-          line: idx + 1,
-          text: raw,
-          reason: 'tap_hold rule outside any #HotIf WinActive block — skipped.',
-        });
-        continue;
-      }
       const thTrigger = parseAHKKeyExpression(thTriggerExpr);
       const thTap = parseAHKKeyExpression(thTapExpr);
       const thHold = parseAHKKeyExpression(thHoldExpr);
@@ -304,14 +358,28 @@ export function parseAHK(source: string): AHKImportResult {
           reason: `tap timeout ${timeoutMs}ms clamped to ${clamped}ms (allowed range ${TAP_HOLD_MIN_TIMEOUT_MS}–${TAP_HOLD_MAX_TIMEOUT_MS}ms).`,
         });
       }
+      if (currentAppId === null) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: 'tap_hold rule inside an unresolved-app #HotIf block — skipped.',
+        });
+        continue;
+      }
+      const thAppId = currentAppId;
+      if (!seenApps.has(thAppId)) {
+        seenApps.add(thAppId);
+        selectedOrder.push(thAppId);
+      }
       rules.push({
         kind: 'tap_hold',
-        appId: currentAppId,
+        appId: thAppId,
         trigger: thTrigger.combo,
         tapAction: thTap.combo,
         holdAction: thHold.combo,
         tapTimeoutMs: clamped,
         description: thDescription.length > 0 ? thDescription : 'Imported from AHK',
+        ...(currentExceptApps ? { exceptApps: currentExceptApps } : {}),
       });
       continue;
     }
@@ -321,15 +389,6 @@ export function parseAHK(source: string): AHKImportResult {
     if (!ruleMatch) continue;
     const [, triggerExpr, actionExpr, descriptionRaw] = ruleMatch;
     const description = (descriptionRaw ?? '').trim();
-
-    if (!currentAppId) {
-      warnings.push({
-        line: idx + 1,
-        text: raw,
-        reason: 'Rule outside any #HotIf WinActive block — no app context, skipped.',
-      });
-      continue;
-    }
 
     const triggerCombo = parseAHKKeyExpression(triggerExpr);
     if (!triggerCombo) {
@@ -351,12 +410,26 @@ export function parseAHK(source: string): AHKImportResult {
       continue;
     }
 
+    if (currentAppId === null) {
+      warnings.push({
+        line: idx + 1,
+        text: raw,
+        reason: 'Rule inside an unresolved-app #HotIf block — skipped.',
+      });
+      continue;
+    }
+    const basicAppId = currentAppId;
+    if (!seenApps.has(basicAppId)) {
+      seenApps.add(basicAppId);
+      selectedOrder.push(basicAppId);
+    }
     rules.push({
       kind: 'basic',
-      appId: currentAppId,
+      appId: basicAppId,
       trigger: triggerCombo.combo,
       action: actionCombo.combo,
       description: description.length > 0 ? description : 'Imported from AHK',
+      ...(currentExceptApps ? { exceptApps: currentExceptApps } : {}),
     });
   }
 

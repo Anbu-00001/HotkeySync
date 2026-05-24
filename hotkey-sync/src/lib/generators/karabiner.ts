@@ -6,6 +6,7 @@ import {
   type Modifier,
 } from '@/lib/keys';
 import type { Config } from '@/types';
+import { GLOBAL_APP_ID } from '@/types';
 import { getAppById, groupRulesByAppId } from '@/lib/generators/shared';
 
 export interface KarabinerFromModifiers {
@@ -24,7 +25,7 @@ export interface KarabinerTo {
 }
 
 export interface KarabinerCondition {
-  type: 'frontmost_application_if';
+  type: 'frontmost_application_if' | 'frontmost_application_unless';
   bundle_identifiers: string[];
 }
 
@@ -81,6 +82,32 @@ function escapeBundleId(bundleId: string): string {
   return `^${escaped}$`;
 }
 
+/**
+ * Build the `conditions` array for a global rule. If `exceptApps` is empty or
+ * undefined the array is empty (Karabiner treats no-conditions as "apply
+ * everywhere"). Otherwise we emit ONE `frontmost_application_unless` block
+ * containing every excluded app's bundle id — apps that aren't in the catalog
+ * or are missing a bundleId (Windows-only) are silently skipped, since they
+ * are no-ops on macOS anyway.
+ */
+function buildGlobalConditions(
+  exceptApps: readonly string[] | undefined,
+): KarabinerCondition[] {
+  if (!exceptApps || exceptApps.length === 0) return [];
+  const patterns: string[] = [];
+  for (const id of exceptApps) {
+    const app = getAppById(id);
+    if (app?.bundleId) patterns.push(escapeBundleId(app.bundleId));
+  }
+  if (patterns.length === 0) return [];
+  return [
+    {
+      type: 'frontmost_application_unless',
+      bundle_identifiers: patterns,
+    },
+  ];
+}
+
 function buildKarabinerFrom(trigger: KeyCombo): KarabinerFrom {
   const base = comboToKarabinerFrom(trigger);
   const modifiers: KarabinerFromModifiers = { ...(base.modifiers ?? {}) };
@@ -110,22 +137,28 @@ export function generateKarabiner(config: Config): KarabinerOutput {
   const grouped = groupRulesByAppId(config.rules);
 
   for (const [appId, appRules] of grouped) {
-    const app = getAppById(appId);
+    const isGlobal = appId === GLOBAL_APP_ID;
+    const app = isGlobal ? null : getAppById(appId);
     // Defensive: store prevents unknown appIds; if one slips through, skip the whole group.
-    if (!app) continue;
-    // Karabiner is macOS-only — an app without a bundleId cannot be targeted.
-    // This happens for Windows-exclusive entries (e.g. Notepad++, PowerToys).
-    if (!app.bundleId) continue;
+    if (!isGlobal && !app) continue;
+    // Karabiner is macOS-only — a per-app rule without a bundleId can't be
+    // targeted (Windows-exclusive apps like Notepad++). Global rules can
+    // still emit, with optional `frontmost_application_unless` exclusions.
+    if (!isGlobal && !app?.bundleId) continue;
 
-    const bundlePattern = escapeBundleId(app.bundleId);
+    const bundlePattern = !isGlobal && app?.bundleId ? escapeBundleId(app.bundleId) : null;
+    // Description prefix: app name for per-app rules, "Global" for the sentinel.
+    const descPrefix = isGlobal ? 'Global' : (app?.name ?? appId);
 
     for (const rule of appRules) {
-      const conditions: KarabinerCondition[] = [
-        {
-          type: 'frontmost_application_if',
-          bundle_identifiers: [bundlePattern],
-        },
-      ];
+      const conditions: KarabinerCondition[] = isGlobal
+        ? buildGlobalConditions(rule.exceptApps)
+        : [
+            {
+              type: 'frontmost_application_if',
+              bundle_identifiers: [bundlePattern!],
+            },
+          ];
 
       if (rule.kind === 'disable') {
         let trigger: KeyCombo;
@@ -138,7 +171,7 @@ export function generateKarabiner(config: Config): KarabinerOutput {
         // see complex_modifications gallery (browser-rshift-enter-disable.json
         // and many others). The key remains pressable but does nothing.
         output.rules.push({
-          description: `${app.name}: ${rule.description}`,
+          description: `${descPrefix}: ${rule.description}`,
           manipulators: [
             {
               type: 'basic',
@@ -169,7 +202,7 @@ export function generateKarabiner(config: Config): KarabinerOutput {
         }
 
         output.rules.push({
-          description: `${app.name}: ${rule.description}`,
+          description: `${descPrefix}: ${rule.description}`,
           manipulators: [
             {
               type: 'basic',
@@ -201,7 +234,7 @@ export function generateKarabiner(config: Config): KarabinerOutput {
       }
 
       output.rules.push({
-        description: `${app.name}: ${rule.description}`,
+        description: `${descPrefix}: ${rule.description}`,
         manipulators: [
           {
             type: 'basic',

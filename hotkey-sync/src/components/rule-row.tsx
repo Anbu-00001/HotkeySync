@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Trash2, AlertTriangle, ArrowRight, Zap, Ban } from 'lucide-react';
+import { Trash2, AlertTriangle, ArrowRight, Zap, Ban, Globe, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KeyCaptureInput } from '@/components/key-capture-input';
@@ -32,6 +32,8 @@ export function RuleRow({
 
   const isTapHold = rule.kind === 'tap_hold';
   const isDisable = rule.kind === 'disable';
+  const isGlobal = rule.appId === '__global';
+  const exceptCount = isGlobal ? rule.exceptApps?.length ?? 0 : 0;
 
   return (
     <div
@@ -65,6 +67,28 @@ export function RuleRow({
               <Badge variant="outline" className="text-[10px] gap-1">
                 <Ban className="h-2.5 w-2.5" />
                 Disabled
+              </Badge>
+            )}
+            {isGlobal && (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1"
+                data-testid="global-rule-badge"
+                title="Applies in every app. macOS Secure Input fields (password prompts, VPN clients) silently swallow events — Karabiner and Hammerspoon are both blind there; this rule will appear to do nothing in those contexts."
+              >
+                <Globe className="h-2.5 w-2.5" />
+                Global
+              </Badge>
+            )}
+            {isGlobal && exceptCount > 0 && (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1"
+                data-testid="excluded-apps-chip"
+                title={`Excluded in: ${(rule.exceptApps ?? []).join(', ')}`}
+              >
+                <ShieldAlert className="h-2.5 w-2.5" />
+                Excluded in {exceptCount} {exceptCount === 1 ? 'app' : 'apps'}
               </Badge>
             )}
           </div>

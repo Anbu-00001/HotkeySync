@@ -299,6 +299,62 @@ describe('generateAHK — unknown appId', () => {
   });
 });
 
+describe('generateAHK — global rules (Wave 2.5)', () => {
+  it('global rule with no exceptApps emits NO #HotIf wrapper', () => {
+    const out = generateAHK(
+      makeConfig([
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'caps_lock',
+          action: 'escape',
+          description: 'Caps Lock to Esc',
+        },
+      ]),
+    );
+    expect(out).toContain('; ═══ Global');
+    expect(out).toContain('CapsLock:: Send("{Escape}")');
+    // Crucially: no #HotIf directive surrounding the global rule. AHK treats
+    // bare hotkeys as global, which is exactly what we want.
+    expect(out).not.toContain('#HotIf');
+  });
+
+  it('global rule with exceptApps emits #HotIf !(...) wrapper', () => {
+    const out = generateAHK(
+      makeConfig([
+        {
+          kind: 'disable',
+          appId: '__global',
+          trigger: 'ctrl+q',
+          description: 'No Ctrl+Q (except in iTerm)',
+          exceptApps: ['iterm2'],
+        },
+      ]),
+    );
+    // iterm2 has no exeName in our catalogue (mac-only). Should fall back
+    // to NO wrapper, since exes.length will be 0 after filtering.
+    // Sanity-check that scenario; the more important wrapped path is exercised
+    // below via a Windows-capable app.
+    expect(out).not.toContain('#HotIf');
+  });
+
+  it('global rule with windows-capable exceptApps emits the negated WinActive', () => {
+    const out = generateAHK(
+      makeConfig([
+        {
+          kind: 'disable',
+          appId: '__global',
+          trigger: 'ctrl+q',
+          description: 'No Ctrl+Q (except in Chrome)',
+          exceptApps: ['google-chrome'],
+        },
+      ]),
+    );
+    expect(out).toContain('#HotIf !(WinActive("ahk_exe chrome.exe"))');
+    expect(out).toContain('^q:: return');
+  });
+});
+
 describe('generateAHK — disable rule', () => {
   const disableRule: HotkeyRule = {
     kind: 'disable',

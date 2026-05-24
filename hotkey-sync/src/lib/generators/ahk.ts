@@ -7,7 +7,29 @@ import {
   type TriggerKey,
 } from '@/lib/keys';
 import type { Config } from '@/types';
+import { GLOBAL_APP_ID } from '@/types';
 import { getAppById, groupRulesByAppId } from '@/lib/generators/shared';
+
+/**
+ * Build the AHK `#HotIf` expression for a global rule's exception list.
+ * Returns `null` when there are no usable exceptions — caller should emit the
+ * rule with NO `#HotIf` directive (which makes it global by default in AHK).
+ * Apps without an exeName (Mac-only entries) are filtered out.
+ */
+function buildGlobalHotIfExpr(
+  exceptApps: readonly string[] | undefined,
+): string | null {
+  if (!exceptApps || exceptApps.length === 0) return null;
+  const exes: string[] = [];
+  for (const id of exceptApps) {
+    const app = getAppById(id);
+    if (app?.exeName) exes.push(app.exeName);
+  }
+  if (exes.length === 0) return null;
+  // Wrap the disjunction in `!(…)` so the rule fires everywhere EXCEPT these.
+  const inner = exes.map((e) => `WinActive("ahk_exe ${e}")`).join(' || ');
+  return `#HotIf !(${inner})`;
+}
 
 const AHK_SEND_KEY_MAP: Partial<Record<TriggerKey, string>> = {
   tab: '{Tab}',
@@ -95,64 +117,91 @@ export function generateAHK(config: Config): string {
 
   const blocks: string[] = [];
   for (const [appId, appRules] of grouped) {
-    const app = getAppById(appId);
-    if (!app) {
+    const isGlobal = appId === GLOBAL_APP_ID;
+    const app = isGlobal ? null : getAppById(appId);
+    if (!isGlobal && !app) {
       // Defensive: store prevents unknown appIds; surface a comment if one slips through.
       blocks.push(`; Note: skipped rule for unknown app '${appId}'`);
       blocks.push('');
       continue;
     }
-    blocks.push(`; ═══ ${app.name} ═══`);
-    blocks.push(`#HotIf WinActive("ahk_exe ${app.exeName}")`);
-    for (const rule of appRules) {
-      if (rule.kind === 'disable') {
-        let triggerStr: string;
-        try {
-          triggerStr = comboToAHK(parseKeyCombo(rule.trigger));
-        } catch {
-          blocks.push(
-            `; Skipped malformed disable rule (trigger="${rule.trigger}")`,
-          );
-          continue;
+    if (isGlobal) {
+      blocks.push('; ═══ Global (applies in every app) ═══');
+      // Each global rule can carry its own exceptApps — emit per-rule
+      // `#HotIf !(...)` wrappers when needed, no wrapper at all when global
+      // and unrestricted (AHK treats no-#HotIf as global).
+      for (const rule of appRules) {
+        const hotIfExpr = buildGlobalHotIfExpr(rule.exceptApps);
+        if (hotIfExpr) blocks.push(hotIfExpr);
+        emitAhkRuleLine(rule, blocks);
+        if (hotIfExpr) {
+          blocks.push('#HotIf');
         }
-        // `return` exits the hotkey handler before the OS sees the keystroke,
-        // effectively swallowing it. AHK community canonical pattern.
-        blocks.push(`${triggerStr}:: return  ; ${rule.description} (disabled)`);
-        continue;
       }
-      if (rule.kind === 'tap_hold') {
-        let triggerStr: string;
-        let tapStr: string;
-        let holdStr: string;
-        try {
-          triggerStr = comboToAHK(parseKeyCombo(rule.trigger));
-          tapStr = comboToAHKSend(parseKeyCombo(rule.tapAction));
-          holdStr = comboToAHKSend(parseKeyCombo(rule.holdAction));
-        } catch {
-          blocks.push(
-            `; Skipped malformed tap_hold rule (trigger="${rule.trigger}", tap="${rule.tapAction}", hold="${rule.holdAction}")`,
-          );
-          continue;
-        }
-        blocks.push(
-          `${triggerStr}:: TapHoldAction(${rule.tapTimeoutMs}, "${tapStr}", "${holdStr}")  ; ${rule.description}`,
-        );
-        continue;
-      }
-      let triggerStr: string;
-      let actionStr: string;
-      try {
-        triggerStr = comboToAHK(parseKeyCombo(rule.trigger));
-        actionStr = comboToAHKSend(parseKeyCombo(rule.action));
-      } catch {
-        blocks.push(`; Skipped malformed rule (trigger="${rule.trigger}", action="${rule.action}")`);
-        continue;
-      }
-      blocks.push(`${triggerStr}:: Send("${actionStr}")  ; ${rule.description}`);
+      blocks.push('');
+      continue;
     }
+    blocks.push(`; ═══ ${app!.name} ═══`);
+    blocks.push(`#HotIf WinActive("ahk_exe ${app!.exeName}")`);
+    for (const rule of appRules) emitAhkRuleLine(rule, blocks);
     blocks.push('#HotIf');
     blocks.push('');
   }
 
   return [...header, ...prologue, ...blocks].join('\n');
+}
+
+/**
+ * Render a single rule line into the output buffer. Used by both the per-app
+ * branch (already inside a `#HotIf WinActive(...)` block) and the global
+ * branch (inside `#HotIf !(...)` or no `#HotIf` at all).
+ */
+function emitAhkRuleLine(
+  rule: import('@/types').HotkeyRule,
+  blocks: string[],
+): void {
+  if (rule.kind === 'disable') {
+    let triggerStr: string;
+    try {
+      triggerStr = comboToAHK(parseKeyCombo(rule.trigger));
+    } catch {
+      blocks.push(
+        `; Skipped malformed disable rule (trigger="${rule.trigger}")`,
+      );
+      return;
+    }
+    blocks.push(`${triggerStr}:: return  ; ${rule.description} (disabled)`);
+    return;
+  }
+  if (rule.kind === 'tap_hold') {
+    let triggerStr: string;
+    let tapStr: string;
+    let holdStr: string;
+    try {
+      triggerStr = comboToAHK(parseKeyCombo(rule.trigger));
+      tapStr = comboToAHKSend(parseKeyCombo(rule.tapAction));
+      holdStr = comboToAHKSend(parseKeyCombo(rule.holdAction));
+    } catch {
+      blocks.push(
+        `; Skipped malformed tap_hold rule (trigger="${rule.trigger}", tap="${rule.tapAction}", hold="${rule.holdAction}")`,
+      );
+      return;
+    }
+    blocks.push(
+      `${triggerStr}:: TapHoldAction(${rule.tapTimeoutMs}, "${tapStr}", "${holdStr}")  ; ${rule.description}`,
+    );
+    return;
+  }
+  let triggerStr: string;
+  let actionStr: string;
+  try {
+    triggerStr = comboToAHK(parseKeyCombo(rule.trigger));
+    actionStr = comboToAHKSend(parseKeyCombo(rule.action));
+  } catch {
+    blocks.push(
+      `; Skipped malformed rule (trigger="${rule.trigger}", action="${rule.action}")`,
+    );
+    return;
+  }
+  blocks.push(`${triggerStr}:: Send("${actionStr}")  ; ${rule.description}`);
 }

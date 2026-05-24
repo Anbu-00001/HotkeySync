@@ -42,7 +42,12 @@ const karabinerToSchema = z
 
 const karabinerConditionSchema = z
   .object({
-    type: z.literal('frontmost_application_if'),
+    // `frontmost_application_if` for per-app rules; `_unless` for global rules
+    // with an exclusion list. Karabiner accepts both at the same path.
+    type: z.union([
+      z.literal('frontmost_application_if'),
+      z.literal('frontmost_application_unless'),
+    ]),
     bundle_identifiers: z.array(z.string().min(1)).min(1),
   })
   .strict();
@@ -68,7 +73,10 @@ const karabinerManipulatorSchema = z
     to_if_alone: z.array(karabinerToSchema).min(1).optional(),
     to_if_held_down: z.array(karabinerToSchema).min(1).optional(),
     parameters: karabinerManipulatorParametersSchema.optional(),
-    conditions: z.array(karabinerConditionSchema).min(1),
+    // Wave 2.5: global rules with no exception list emit an empty conditions
+    // array (Karabiner treats that as "apply in every app"). Per-app rules
+    // still produce exactly one condition. Both are valid.
+    conditions: z.array(karabinerConditionSchema),
   })
   .strict()
   .refine(

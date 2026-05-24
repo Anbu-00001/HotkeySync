@@ -12,6 +12,10 @@ export const TRIGGER_KEYS = [
   'return_or_enter', 'delete_or_backspace', 'delete_forward',
   'up_arrow', 'down_arrow', 'left_arrow', 'right_arrow',
   'home', 'end', 'page_up', 'page_down',
+  // Caps Lock as a trigger key — unlocks the canonical Caps-Lock-as-Esc/Ctrl
+  // dual-role rule (the highest-signal global rule in our research corpus).
+  // Karabiner maps it directly; AHK supports `CapsLock::` natively.
+  'caps_lock',
 ] as const;
 export type TriggerKey = (typeof TRIGGER_KEYS)[number];
 
@@ -118,6 +122,7 @@ export const AHK_KEY_MAP: Record<TriggerKey, string> = {
   end: 'End',
   page_up: 'PgUp',
   page_down: 'PgDn',
+  caps_lock: 'CapsLock',
 };
 
 export const KARABINER_MODIFIER_MAP: Record<Modifier, string> = {
@@ -160,6 +165,7 @@ export const KARABINER_KEY_MAP: Record<TriggerKey, string> = {
   end: 'end',
   page_up: 'page_up',
   page_down: 'page_down',
+  caps_lock: 'caps_lock',
 };
 
 export function comboToAHK(combo: KeyCombo): string {

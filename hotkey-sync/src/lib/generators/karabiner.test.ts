@@ -320,6 +320,44 @@ describe('generateKarabiner — unknown appId', () => {
   });
 });
 
+describe('generateKarabiner — global rules (Wave 2.5)', () => {
+  it('global rule with no exceptApps emits empty conditions array', () => {
+    const out = generateKarabiner(
+      makeConfig([
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'caps_lock',
+          action: 'escape',
+          description: 'Caps Lock to Esc',
+        },
+      ]),
+    );
+    expect(out.rules).toHaveLength(1);
+    expect(out.rules[0].manipulators[0].conditions).toEqual([]);
+    expect(out.rules[0].description).toBe('Global: Caps Lock to Esc');
+  });
+
+  it('global rule with exceptApps emits frontmost_application_unless', () => {
+    const out = generateKarabiner(
+      makeConfig([
+        {
+          kind: 'disable',
+          appId: '__global',
+          trigger: 'meta+space',
+          description: 'Free Cmd+Space',
+          exceptApps: ['iterm2', 'zoom'],
+        },
+      ]),
+    );
+    const conds = out.rules[0].manipulators[0].conditions;
+    expect(conds).toHaveLength(1);
+    expect(conds[0].type).toBe('frontmost_application_unless');
+    // Both iterm2 and zoom resolve to bundle ids in the catalogue.
+    expect(conds[0].bundle_identifiers).toHaveLength(2);
+  });
+});
+
 describe('generateKarabiner — disable rule', () => {
   const disableRule: HotkeyRule = {
     kind: 'disable',
