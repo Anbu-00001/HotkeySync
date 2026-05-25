@@ -285,6 +285,38 @@ export interface LayerHotkeyRule {
    */
   oneshotTimeoutMs?: number;
   /**
+   * Wave 2.9 — lock-on-N-taps (QMK `ONESHOT_TAP_TOGGLE` parity). When set,
+   * tapping the trigger N times in a row within `oneshotTimeoutMs` (or 500ms
+   * if no timeout is set) promotes the armed layer to a LOCKED state that
+   * stays active until the trigger is tapped one more time.
+   *
+   * Only valid when `mode: 'oneshot'`. Currently only the literal `2`
+   * (double-tap to lock) is accepted at the schema layer — N=3..5 expansion
+   * is reserved for a future wave. The Karabiner emission requires N-1
+   * counter-bump manipulators per layer; we ship the canonical case first.
+   *
+   * Locked state is cleared ONLY by re-tapping the trigger. `cancelKeys` and
+   * the auto-disarm timeout DO NOT clear a locked layer (mirrors QMK
+   * exactly). When this field is set, `oneshotTimeoutMs` controls the
+   * consecutive-tap window only — the auto-disarm behaviour from Wave 2.8 is
+   * suppressed because its semantics conflict with the locked state.
+   */
+  oneshotLockOnTaps?: 2;
+  /**
+   * Wave 2.9 — visible armed-state indicator. When set, the generator emits
+   * a Karabiner notification (`set_notification_message`) or AHK tooltip
+   * (`ToolTip`, slot-based) while the layer is armed (one-shot active OR
+   * locked). Empty string = auto-label from layer name; custom string =
+   * exact text.
+   *
+   * Karabiner constraint: `set_notification_message` is emitted in a
+   * SEPARATE manipulator from `set_variable` to dodge issue #4104 (phantom
+   * key-ups when both share a `to[]` array — closed `not_planned` 2026-02-10).
+   * AHK constraint: uses `ToolTip` (slot-based, instant replace) NOT
+   * `TrayTip` (Win10+ toast queue is unfit for sub-second feedback).
+   */
+  notification?: string;
+  /**
    * Wave 2.8 — one-shot only. Keys that immediately clear an armed layer
    * without firing a child rule. Each entry is a canonical KeyCombo string
    * (modifier-prefixed allowed, e.g. `meta+period`). Default `['escape']`

@@ -166,7 +166,7 @@ export const PRESETS: Preset[] = [
     id: 'caps-lock-vim-arrows-oneshot',
     name: 'Caps Lock Vim Arrows — One-Shot',
     description:
-      'Wave 2.8 one-shot variant: TAP Caps Lock to arm the vim-arrows layer, then press H/J/K/L once to fire and auto-disarm. Tap Escape to cancel. Karabiner runs this natively via set_variable + per-child clear; AHK approximates with a global flag + #HotIf block (AHK012 lint surfaces the flag-leak caveat). Best for users who hate the "I have to hold Caps the whole time" friction of the hold variant.',
+      'Wave 2.8 one-shot variant: TAP Caps Lock to arm the vim-arrows layer, then press H/J/K/L once to fire and auto-disarm. Tap Escape to cancel. Karabiner runs this natively via set_variable + per-child clear; AHK approximates with a global flag + #HotIf block (AHK012 lint surfaces the flag-leak caveat). Best for users who hate the "I have to hold Caps the whole time" friction of the hold variant. Wave 2.9: ships with an on-screen "armed" indicator (Karabiner HUD / AHK ToolTip).',
     rules: [
       {
         kind: 'layer',
@@ -175,7 +175,16 @@ export const PRESETS: Preset[] = [
         layerName: 'vim-arrows-os',
         mode: 'oneshot',
         cancelKeys: ['escape'],
-        description: 'Tap Caps Lock to arm vim arrow layer (one-shot)',
+        // Wave 2.9 — visible armed-state indicator. Empty string = auto-label
+        // ("vim-arrows-os layer armed"); generators render via Karabiner HUD
+        // or AHK ToolTip slot. Closes the #1 pain point from research
+        // (invisible armed state).
+        notification: '',
+        // Wave 2.9 — double-tap Caps Lock to LOCK the layer on for sticky
+        // multi-key navigation; re-tap Caps Lock to unlock. Mirrors QMK
+        // ONESHOT_TAP_TOGGLE = 2 exactly.
+        oneshotLockOnTaps: 2,
+        description: 'Tap Caps Lock to arm vim arrow layer (one-shot, lockable)',
         exceptApps: DEFAULT_GLOBAL_EXCEPTIONS,
       },
       {

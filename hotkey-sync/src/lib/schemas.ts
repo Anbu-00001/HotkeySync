@@ -147,6 +147,16 @@ export const layerRuleSchema = z
     // Wave 2.8 — one-shot tuning knobs. All ignored when mode === 'hold'.
     oneshotTimeoutMs: z.number().int().min(100).max(10_000).optional(),
     cancelKeys: z.array(keyComboSchema).max(8).optional(),
+    // Wave 2.9 — armed-state visible indicator. Empty string = auto-label.
+    // Karabiner: emits set_notification_message in a separate `to[]` entry
+    // (or in to_after_key_up) per KE #4104 workaround. AHK: emits ToolTip
+    // (slot-based; NOT TrayTip — Win10+ toast queue is unfit for sub-second
+    // indicators).
+    notification: z.string().max(80).optional(),
+    // Wave 2.9 — lock-on-N-taps. Only literal `2` accepted at this wave;
+    // N=3..5 is reserved for future expansion (Karabiner emission requires
+    // N-1 counter-bump manipulators per layer).
+    oneshotLockOnTaps: z.literal(2).optional(),
     description: z.string().min(1).max(120),
     exceptApps: exceptAppsSchema,
   })
@@ -164,7 +174,7 @@ export const layerRuleSchema = z
       });
     }
     if (data.mode === 'hold') {
-      for (const k of ['oneshotTimeoutMs', 'cancelKeys'] as const) {
+      for (const k of ['oneshotTimeoutMs', 'cancelKeys', 'oneshotLockOnTaps'] as const) {
         if (data[k] !== undefined) {
           ctx.addIssue({
             code: 'custom',
@@ -172,6 +182,17 @@ export const layerRuleSchema = z
             message: `${k} is only meaningful when mode === 'oneshot'.`,
           });
         }
+      }
+      // Wave 2.9 — notification on hold layers needs set_notification_message
+      // co-located with set_variable in `to[]`, which triggers KE #4104
+      // (closed not_planned). Restrict to one-shot; document as honest gap.
+      if (data.notification !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['notification'],
+          message:
+            'notification is currently only supported on one-shot layers (Karabiner #4104 workaround).',
+        });
       }
     }
   });

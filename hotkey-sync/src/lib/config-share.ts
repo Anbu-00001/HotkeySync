@@ -67,13 +67,14 @@ function decodeAction(a: ShortAction): Action {
 }
 
 export const SHARE_HASH_PREFIX = '#hk=';
-export const SHARE_VERSION = 6 as const;
+export const SHARE_VERSION = 7 as const;
 /** Older versions still accepted on decode. We emit only the current version. */
 export const SHARE_VERSION_LEGACY_V1 = 1 as const;
 export const SHARE_VERSION_LEGACY_V2 = 2 as const;
 export const SHARE_VERSION_LEGACY_V3 = 3 as const;
 export const SHARE_VERSION_LEGACY_V4 = 4 as const;
 export const SHARE_VERSION_LEGACY_V5 = 5 as const;
+export const SHARE_VERSION_LEGACY_V6 = 6 as const;
 
 // Each rule in the encoded payload is a discriminated union on `k`.
 // Basic rules omit `k` entirely (so v1 payloads decode unchanged).
@@ -126,6 +127,10 @@ const layerShortRuleSchema = z.object({
   md: z.literal('o').optional(),
   ot: z.number().int().min(100).max(10_000).optional(),
   ck: z.array(keyComboSchema).max(8).optional(),
+  // Wave 2.9 — armed-state notification text. Empty string = auto-label.
+  nt: z.string().max(80).optional(),
+  // Wave 2.9 — lock-on-N-taps. Currently only literal `2` accepted.
+  lt: z.literal(2).optional(),
   d: z.string().min(0).max(120),
 });
 
@@ -144,6 +149,7 @@ const sharedConfigSchema = z.object({
     z.literal(SHARE_VERSION_LEGACY_V3),
     z.literal(SHARE_VERSION_LEGACY_V4),
     z.literal(SHARE_VERSION_LEGACY_V5),
+    z.literal(SHARE_VERSION_LEGACY_V6),
   ]),
   o: z.enum(['windows', 'mac']),
   s: z.array(z.string().min(1).max(64)).max(200),
@@ -223,6 +229,8 @@ export function encodeConfig(state: ConfigState): string {
                   ? { ot: r.oneshotTimeoutMs }
                   : {}),
                 ...(r.cancelKeys !== undefined ? { ck: r.cancelKeys.slice() } : {}),
+                ...(r.notification !== undefined ? { nt: r.notification } : {}),
+                ...(r.oneshotLockOnTaps === 2 ? { lt: 2 as const } : {}),
               },
     ),
   };
@@ -303,6 +311,8 @@ export function decodeConfig(encoded: string): DecodeResult {
       if (layer.mode === 'oneshot') {
         if (r.ot !== undefined) layer.oneshotTimeoutMs = r.ot;
         if (r.ck !== undefined) layer.cancelKeys = r.ck.slice();
+        if (r.nt !== undefined) layer.notification = r.nt;
+        if (r.lt === 2) layer.oneshotLockOnTaps = 2;
       }
       return layer;
     }

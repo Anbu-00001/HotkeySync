@@ -27,6 +27,34 @@ function layerVarNameAhk(layerName: string): string {
 }
 
 /**
+ * Wave 2.9 — deterministic ToolTip slot for a layer (1..20). Per AHK v2 docs
+ * ToolTip supports up to 20 simultaneous slots. Two layers with the same
+ * hash will share a slot — acceptable since users rarely have >20 layers.
+ * NOT `TrayTip`: Win10+ routes that through the toast queue (calls don't
+ * replace, they queue) which is unfit for sub-second armed indicators.
+ */
+function layerToolTipSlot(layerName: string): number {
+  let h = 0;
+  for (let i = 0; i < layerName.length; i++) {
+    h = (h * 31 + layerName.charCodeAt(i)) | 0;
+  }
+  return (Math.abs(h) % 20) + 1;
+}
+
+/**
+ * Wave 2.9 — armed-state text for the ToolTip indicator. Empty string from
+ * the user means "auto-label"; custom string is taken verbatim. Escapes any
+ * embedded `"` so the emitted Send literal stays valid AHK.
+ */
+function layerNotificationTextAhk(layer: LayerHotkeyRule): string {
+  const raw =
+    layer.notification === ''
+      ? `${layer.layerName} layer armed`
+      : (layer.notification ?? '');
+  return raw.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+/**
  * AHK virtual key names for the four canonical modifiers, used when the
  * destination is modifier-only. Always emit the *Left* variant — matches
  * what Karabiner uses by default (left_control, left_command, etc.).
@@ -144,9 +172,14 @@ function emitLayerPrologue(layers: LayerHotkeyRule[]): string[] {
     '; Wave 2.7 / 2.8 — Hyper Layer flags. Hold layers: true while trigger held.',
     '; One-shot layers: true after tap; cleared by next child key, cancel key,',
     '; or optional SetTimer when the layer carries oneshotTimeoutMs.',
+    '; Wave 2.9 — lock-on-tap layers gain `_locked` and `_tapcount` companions.',
   ];
   for (const layer of layers) {
     lines.push(`global ${layerVarNameAhk(layer.layerName)} := false`);
+    if (layer.oneshotLockOnTaps === 2) {
+      lines.push(`global ${layerVarNameAhk(layer.layerName)}_locked := false`);
+      lines.push(`global ${layerVarNameAhk(layer.layerName)}_tapcount := 0`);
+    }
   }
   lines.push('');
   // Watchdog only watches HOLD layers — for one-shot the flag is intentionally
@@ -198,23 +231,107 @@ function emitAhkLayerActivator(
   }
   const flag = layerVarNameAhk(rule.layerName);
 
+  if (rule.mode === 'oneshot' && rule.oneshotLockOnTaps === 2) {
+    // Wave 2.9 — lock-on-double-tap. The activator hotkey calls a helper
+    // function that runs the full state-machine (locked-check, tap counter,
+    // SetTimer reset). Function-call shape (vs inline `{ ... }` block) keeps
+    // each line self-contained for the line-based AHK lint walker.
+    const pascal = pascalFromKebab(rule.layerName);
+    const slot = layerToolTipSlot(rule.layerName);
+    const tapWindow = rule.oneshotTimeoutMs ?? 500;
+    blocks.push(
+      `*${triggerStr}:: HotkeySync_OneShotTap_${pascal}()  ; ${rule.description} (one-shot lockable on)`,
+    );
+    blocks.push(`HotkeySync_OneShotTap_${pascal}() {`);
+    blocks.push(`  global ${flag}, ${flag}_locked, ${flag}_tapcount`);
+    blocks.push(`  if (${flag}_locked) {`);
+    blocks.push(`    ${flag}_locked := false`);
+    blocks.push(`    ${flag} := false`);
+    blocks.push(`    ${flag}_tapcount := 0`);
+    if (rule.notification !== undefined) {
+      blocks.push(`    ToolTip(, , , ${slot})`);
+    }
+    blocks.push('    return');
+    blocks.push('  }');
+    blocks.push(`  ${flag}_tapcount += 1`);
+    blocks.push(`  ${flag} := true`);
+    blocks.push(`  if (${flag}_tapcount >= 2) {`);
+    blocks.push(`    ${flag}_locked := true`);
+    if (rule.notification !== undefined) {
+      blocks.push(
+        `    ToolTip("${layerNotificationTextAhk(rule)}", 1600, 60, ${slot})`,
+      );
+    }
+    blocks.push('    return');
+    blocks.push('  }');
+    blocks.push(
+      `  SetTimer(HotkeySync_TapReset_${pascal}, -${tapWindow})`,
+    );
+    if (rule.notification !== undefined) {
+      blocks.push(
+        `  ToolTip("${layerNotificationTextAhk(rule)}", 1600, 60, ${slot})`,
+      );
+    }
+    blocks.push('}');
+    blocks.push(`HotkeySync_TapReset_${pascal}() {`);
+    blocks.push(`  global ${flag}_tapcount`);
+    blocks.push(`  ${flag}_tapcount := 0`);
+    blocks.push('}');
+    // Child helper: fires the action, then clears flag + tapcount only when
+    // the layer is NOT locked. Mirrors the Karabiner unlocked-child variant.
+    blocks.push(`HotkeySync_OneShotChild_${pascal}(combo) {`);
+    blocks.push(`  global ${flag}, ${flag}_locked, ${flag}_tapcount`);
+    blocks.push('  Send(combo)');
+    blocks.push(`  if (!${flag}_locked) {`);
+    blocks.push(`    ${flag} := false`);
+    blocks.push(`    ${flag}_tapcount := 0`);
+    if (rule.notification !== undefined) {
+      blocks.push(`    ToolTip(, , , ${slot})`);
+    }
+    blocks.push('  }');
+    blocks.push('}');
+    // Cancel-key helper: clears flag + tapcount only when NOT locked.
+    blocks.push(`HotkeySync_OneShotCancel_${pascal}() {`);
+    blocks.push(`  global ${flag}, ${flag}_locked, ${flag}_tapcount`);
+    blocks.push(`  if (!${flag}_locked) {`);
+    blocks.push(`    ${flag} := false`);
+    blocks.push(`    ${flag}_tapcount := 0`);
+    if (rule.notification !== undefined) {
+      blocks.push(`    ToolTip(, , , ${slot})`);
+    }
+    blocks.push('  }');
+    blocks.push('}');
+    return;
+  }
+
   if (rule.mode === 'oneshot') {
     // Wave 2.8 — tap arms the layer; flag persists past trigger release.
     // Child rules clear the flag at the end of their handlers. Optional
     // SetTimer auto-disarms after `oneshotTimeoutMs` (negative ms = one-shot).
     // No `up` handler: clearing on release would defeat the whole point.
     const timeout = rule.oneshotTimeoutMs;
+    const slot = layerToolTipSlot(rule.layerName);
+    // Wave 2.9 — armed-state ToolTip. `notification` opts in; pinned to
+    // top-right via fixed coords so it doesn't follow the cursor. ToolTip
+    // is the right primitive here (NOT TrayTip — see layerToolTipSlot doc).
+    const showTip =
+      rule.notification !== undefined
+        ? ` ; ToolTip("${layerNotificationTextAhk(rule)}", 1600, 60, ${slot})`
+        : '';
     if (timeout !== undefined) {
       blocks.push(
-        `*${triggerStr}:: { global ${flag} := true ; SetTimer(() => HotkeySync_OneShotExpire_${pascalFromKebab(rule.layerName)}(), -${timeout}) }  ; ${rule.description} (one-shot on)`,
+        `*${triggerStr}:: { global ${flag} := true ; SetTimer(() => HotkeySync_OneShotExpire_${pascalFromKebab(rule.layerName)}(), -${timeout})${showTip} }  ; ${rule.description} (one-shot on)`,
       );
       blocks.push(`HotkeySync_OneShotExpire_${pascalFromKebab(rule.layerName)}() {`);
       blocks.push(`  global ${flag}`);
       blocks.push(`  ${flag} := false`);
+      if (rule.notification !== undefined) {
+        blocks.push(`  ToolTip(, , , ${slot})`);
+      }
       blocks.push('}');
     } else {
       blocks.push(
-        `*${triggerStr}:: { global ${flag} := true }  ; ${rule.description} (one-shot on)`,
+        `*${triggerStr}:: { global ${flag} := true${showTip} }  ; ${rule.description} (one-shot on)`,
       );
     }
     return;
@@ -355,7 +472,7 @@ export function generateAHK(config: Config): string {
       }
       for (const rule of rules) {
         if (isOneShot && rule.kind === 'basic') {
-          emitAhkOneShotChildLine(rule, flag, blocks);
+          emitAhkOneShotChildLine(rule, flag, parent, blocks);
         } else {
           emitAhkRuleLine(rule, blocks);
         }
@@ -363,7 +480,16 @@ export function generateAHK(config: Config): string {
       // Wave 2.8 — emit cancel-key rules INSIDE the same #HotIf block (one
       // per app group). The cancel rules clear the flag without firing the
       // underlying key — pressing Escape on an armed layer means "back out".
+      // Wave 2.9 — cancel-key ALSO clears the ToolTip indicator when the
+      // parent layer carries `notification`. When lockOnTaps is set, route
+      // through a per-layer helper so the locked-state gate is honoured.
       if (isOneShot && parent) {
+        const useHelper = parent.oneshotLockOnTaps === 2;
+        const pascal = useHelper ? pascalFromKebab(parent.layerName) : '';
+        const clearTipCancel =
+          parent.notification !== undefined
+            ? ` ; ToolTip(, , , ${layerToolTipSlot(parent.layerName)})`
+            : '';
         for (const ck of parent.cancelKeys ?? ['escape']) {
           let ckStr: string;
           try {
@@ -371,9 +497,15 @@ export function generateAHK(config: Config): string {
           } catch {
             continue;
           }
-          blocks.push(
-            `${ckStr}:: { global ${flag} := false }  ; cancel one-shot layer`,
-          );
+          if (useHelper) {
+            blocks.push(
+              `${ckStr}:: HotkeySync_OneShotCancel_${pascal}()  ; cancel one-shot layer`,
+            );
+          } else {
+            blocks.push(
+              `${ckStr}:: { global ${flag} := false${clearTipCancel} }  ; cancel one-shot layer`,
+            );
+          }
         }
       }
       blocks.push('#HotIf');
@@ -425,6 +557,7 @@ function emitAhkRuleLine(rule: HotkeyRule, blocks: string[]): void {
 function emitAhkOneShotChildLine(
   rule: Extract<HotkeyRule, { kind: 'basic' }>,
   flag: string,
+  parent: LayerHotkeyRule | undefined,
   blocks: string[],
 ): void {
   if (isModifierAction(rule.action)) {
@@ -448,8 +581,26 @@ function emitAhkOneShotChildLine(
     );
     return;
   }
+  // Wave 2.9 — when parent has lockOnTaps, route through a per-layer child
+  // helper so the locked-check happens at runtime. The helper is emitted
+  // once per layer alongside the activator function.
+  if (parent && parent.oneshotLockOnTaps === 2) {
+    const pascal = pascalFromKebab(parent.layerName);
+    blocks.push(
+      `${triggerStr}:: HotkeySync_OneShotChild_${pascal}("${actionStr}")  ; ${rule.description}`,
+    );
+    return;
+  }
+  // Wave 2.9 — clear the armed-state ToolTip alongside the flag clear when
+  // the parent layer carries `notification`. Order: send action → clear flag
+  // → clear tooltip. Putting the tooltip-clear after the flag-clear keeps
+  // the indicator visible through the action send, which feels right.
+  const clearTip =
+    parent && parent.notification !== undefined
+      ? ` ; ToolTip(, , , ${layerToolTipSlot(parent.layerName)})`
+      : '';
   blocks.push(
-    `${triggerStr}:: { Send("${actionStr}") ; global ${flag} := false }  ; ${rule.description}`,
+    `${triggerStr}:: { Send("${actionStr}") ; global ${flag} := false${clearTip} }  ; ${rule.description}`,
   );
 }
 

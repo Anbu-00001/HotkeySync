@@ -633,3 +633,139 @@ describe('generateAHK — one-shot layer (Wave 2.8)', () => {
     expect(out).not.toMatch(/SetTimer\(HotkeySync_LayerWatchdog/);
   });
 });
+
+describe('generateAHK — notification (Wave 2.9)', () => {
+  it('emits ToolTip on one-shot activator with notification set', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim',
+          mode: 'oneshot',
+          notification: 'Vim armed',
+          description: 'one-shot with notification',
+        },
+      ],
+    });
+    expect(out).toMatch(/ToolTip\("Vim armed",\s*1600,\s*60,\s*\d+\)/);
+  });
+
+  it('empty notification string is auto-labeled', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'my-layer',
+          mode: 'oneshot',
+          notification: '',
+          description: 'auto-label',
+        },
+      ],
+    });
+    expect(out).toMatch(/ToolTip\("my-layer layer armed",/);
+  });
+
+  it('one-shot child appends ToolTip-clear after flag-clear', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim',
+          mode: 'oneshot',
+          notification: '',
+          description: 'one-shot',
+        },
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'h',
+          action: 'left_arrow',
+          layerName: 'vim',
+          description: 'H to Left',
+        },
+      ],
+    });
+    expect(out).toMatch(
+      /h::\s*\{\s*Send\("\{Left\}"\)\s*;\s*global g_LayerVim := false\s*;\s*ToolTip\(,\s*,\s*,\s*\d+\)\s*\}/,
+    );
+  });
+
+  it('escapes double-quotes in notification text', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim',
+          mode: 'oneshot',
+          notification: 'It says "hello"',
+          description: 'quote test',
+        },
+      ],
+    });
+    expect(out).toMatch(/ToolTip\("It says \\"hello\\""/);
+  });
+});
+
+describe('generateAHK — lock-on-double-tap (Wave 2.9)', () => {
+  const makeLockableRule = () => ({
+    kind: 'layer' as const,
+    appId: '__global',
+    trigger: 'caps_lock',
+    layerName: 'vim',
+    mode: 'oneshot' as const,
+    oneshotLockOnTaps: 2 as const,
+    description: 'lockable',
+  });
+
+  it('emits activator as a function-call hotkey + per-layer helper definition', () => {
+    const out = generateAHK({ os: 'windows', rules: [makeLockableRule()] });
+    expect(out).toContain('*CapsLock:: HotkeySync_OneShotTap_Vim()');
+    expect(out).toContain('HotkeySync_OneShotTap_Vim() {');
+    expect(out).toContain('HotkeySync_TapReset_Vim() {');
+  });
+
+  it('emits the _locked and _tapcount companion globals', () => {
+    const out = generateAHK({ os: 'windows', rules: [makeLockableRule()] });
+    expect(out).toContain('global g_LayerVim_locked := false');
+    expect(out).toContain('global g_LayerVim_tapcount := 0');
+  });
+
+  it('child rules call HotkeySync_OneShotChild_<Pascal>("<combo>")', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        makeLockableRule(),
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'h',
+          action: 'left_arrow',
+          layerName: 'vim',
+          description: 'H to Left',
+        },
+      ],
+    });
+    expect(out).toMatch(/h::\s*HotkeySync_OneShotChild_Vim\("\{Left\}"\)/);
+    expect(out).toContain('HotkeySync_OneShotChild_Vim(combo) {');
+  });
+
+  it('activator helper increments tapcount, sets locked at >=2, and re-arms SetTimer for tap-window', () => {
+    const out = generateAHK({ os: 'windows', rules: [makeLockableRule()] });
+    expect(out).toContain('g_LayerVim_tapcount += 1');
+    expect(out).toMatch(/if \(g_LayerVim_tapcount >= 2\)/);
+    expect(out).toContain('g_LayerVim_locked := true');
+    expect(out).toMatch(/SetTimer\(HotkeySync_TapReset_Vim,\s*-\d+\)/);
+  });
+});

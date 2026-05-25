@@ -55,13 +55,30 @@ const karabinerToSchema = z
       })
       .strict()
       .optional(),
+    // Wave 2.9 — armed-indicator form. Emitted in its own manipulator (never
+    // alongside set_variable) per KE #4104 workaround.
+    set_notification_message: z
+      .object({
+        id: z.string().min(1),
+        text: z.string(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .refine(
-    (to) => (to.key_code !== undefined) !== (to.set_variable !== undefined),
+    (to) => {
+      // Exactly one of key_code / set_variable / set_notification_message.
+      const flags = [
+        to.key_code !== undefined,
+        to.set_variable !== undefined,
+        to.set_notification_message !== undefined,
+      ];
+      return flags.filter(Boolean).length === 1;
+    },
     {
       message:
-        'to event must have exactly one of `key_code` or `set_variable`',
+        'to event must have exactly one of `key_code`, `set_variable`, or `set_notification_message`',
     },
   );
 

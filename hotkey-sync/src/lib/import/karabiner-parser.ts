@@ -90,6 +90,10 @@ const incomingToEventSchema = z.object({
   set_variable: z
     .object({ name: z.string(), value: z.number().int() })
     .optional(),
+  // Wave 2.9 — `set_notification_message` for armed-state HUD indicators.
+  set_notification_message: z
+    .object({ id: z.string(), text: z.string() })
+    .optional(),
 });
 
 const incomingManipulatorSchema = z
@@ -417,6 +421,47 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
           ? sourceDescription.slice(appName.length + 2)
           : sourceDescription;
 
+      // Wave 2.9 — detect lock-on-tap by scanning the entire incoming rule
+      // (which carries 3 manipulators all with the same `from`) for a
+      // set_variable event targeting `<varBase>_locked` with value 1. If
+      // present, we re-shape the in-progress LayerHotkeyRule with
+      // `oneshotLockOnTaps: 2`. The rule's OTHER manipulators (lock-clear,
+      // lock-promoter) are then implicit — we recognise them as part of the
+      // activator and don't double-emit anything.
+      const allRuleManips = rule.manipulators ?? [];
+      const ruleHasLockMarker = allRuleManips.some((mm) =>
+        (mm.to ?? []).some(
+          (e) =>
+            e.set_variable !== undefined &&
+            /_locked$/.test(e.set_variable.name) &&
+            e.set_variable.value === 1,
+        ),
+      );
+
+      // Skip the lock-clear and lock-promoter helper manipulators when the
+      // rule is a lock-on-tap layer. Only the first-tap manipulator (which
+      // sets `<layer>_tapcount=1` AND `<layer>=1`) is parsed as the
+      // activator. The rest are internal state-machine helpers.
+      if (ruleHasLockMarker) {
+        const setsTapCountOne = (m.to ?? []).some(
+          (e) =>
+            e.set_variable?.name.endsWith('_tapcount') &&
+            e.set_variable?.value === 1,
+        );
+        const setsLayerOne = (m.to ?? []).some(
+          (e) =>
+            e.set_variable !== undefined &&
+            !e.set_variable.name.endsWith('_tapcount') &&
+            !e.set_variable.name.endsWith('_locked') &&
+            e.set_variable.value === 1,
+        );
+        if (!(setsTapCountOne && setsLayerOne)) {
+          // Internal helper manipulator — silently skip; the first-tap
+          // manipulator carries the activator semantics for our schema.
+          continue;
+        }
+      }
+
       // Wave 2.7 / 2.8 — detect a layer activator. Two shapes:
       //   - Hold layer: `to[0].set_variable` set to 1 + matching
       //     `to_after_key_up[0].set_variable` set to 0. Variable persists only
@@ -426,9 +471,27 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
       //     a matching `set_variable: 0` event provides the timeout.
       // In both, variable name is `hotkeysync_layer_<name>` (our convention);
       // imports from other tools (karabiner.ts, Goku) work best-effort.
-      const layerOn = m.to?.[0]?.set_variable;
-      const layerOffHold = m.to_after_key_up?.[0]?.set_variable;
-      const layerOffDelayed = m.to_delayed_action?.to_if_invoked?.[0]?.set_variable;
+      // Find the layer-name set_variable (skip _tapcount / _locked helpers).
+      // For non-lock layers there's only one entry; for lock-on-tap layers
+      // the layer var lives at to[1] after the tapcount bump at to[0].
+      const layerOn = (m.to ?? []).find(
+        (e) =>
+          e.set_variable !== undefined &&
+          !e.set_variable.name.endsWith('_tapcount') &&
+          !e.set_variable.name.endsWith('_locked'),
+      )?.set_variable;
+      const layerOffHold = m.to_after_key_up?.find(
+        (e) =>
+          e.set_variable !== undefined &&
+          !e.set_variable.name.endsWith('_tapcount') &&
+          !e.set_variable.name.endsWith('_locked'),
+      )?.set_variable;
+      const layerOffDelayed = m.to_delayed_action?.to_if_invoked?.find(
+        (e) =>
+          e.set_variable !== undefined &&
+          !e.set_variable.name.endsWith('_tapcount') &&
+          !e.set_variable.name.endsWith('_locked'),
+      )?.set_variable;
       const isHoldLayer =
         !!layerOn &&
         !!layerOffHold &&
@@ -491,6 +554,48 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
             layerRule.oneshotTimeoutMs = delay;
           }
         }
+        // Wave 2.9 — lock-on-tap: any manipulator in this rule emits
+        // <layer>_locked := 1, which is the marker the lock-promoter sets.
+        // The rule also carries multiple manipulators (lock-clear,
+        // lock-promoter, first-tap); we treat the whole rule as one
+        // activator with `oneshotLockOnTaps: 2`. The other manipulators
+        // get skipped via the early-continue below.
+        if (mode === 'oneshot' && ruleHasLockMarker) {
+          layerRule.oneshotLockOnTaps = 2;
+          // The first-tap manipulator carries the tap-window in its
+          // to_delayed_action delay. Recover if present.
+          const firstTapM = allRuleManips.find(
+            (mm) =>
+              (mm.to ?? []).some(
+                (e) =>
+                  e.set_variable?.name?.endsWith('_tapcount') &&
+                  e.set_variable?.value === 1,
+              ),
+          );
+          const tapDelay =
+            firstTapM?.parameters?.['basic.to_delayed_action_delay_milliseconds'];
+          if (typeof tapDelay === 'number' && tapDelay >= 100 && tapDelay <= 10_000) {
+            layerRule.oneshotTimeoutMs = tapDelay;
+          }
+        }
+        // Wave 2.9 — recover notification text from a `set_notification_message`
+        // event in `to_after_key_up`. Only one-shot layers carry this (hold
+        // mode is schema-rejected for notification).
+        if (mode === 'oneshot') {
+          const notifEvt = m.to_after_key_up?.find(
+            (e) => e.set_notification_message?.id === `hks_${layerName.replace(/-/g, '_')}`,
+          );
+          const notifText = notifEvt?.set_notification_message?.text;
+          if (typeof notifText === 'string') {
+            // Empty string from the source means our generator's "auto-label"
+            // mode — but we don't know whether the user originally typed the
+            // auto label or left it empty. Round-trip preserves whichever the
+            // source had; if the text matches the auto-label exactly, prefer
+            // the empty-string form so re-emits stay byte-identical.
+            const autoLabel = `${layerName} layer armed`;
+            layerRule.notification = notifText === autoLabel ? '' : notifText;
+          }
+        }
         rules.push(attachExcept(layerRule));
         if (!seenApps.has(appId)) {
           seenApps.add(appId);
@@ -500,20 +605,52 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
       }
 
       // Warn-then-skip when only one half of the layer activator pattern is
-      // present — likely hand-written rules we don't model. (A bare
-      // `to_after_key_up` clear is also non-emittable in our format.)
+      // present — likely hand-written rules we don't model. Wave 2.9 relaxes
+      // this: if every entry in `to_after_key_up` is a
+      // `set_notification_message` (which is how layer-child notification
+      // clears are emitted), the rest of the manipulator can be parsed
+      // normally; the clear event itself is informational.
       if ((m.to_after_key_up?.length ?? 0) > 0) {
-        warnings.push({
-          rulePath: path,
-          reason: '`to_after_key_up` is not supported yet — manipulator skipped.',
-        });
-        continue;
+        const allNotification = m.to_after_key_up!.every(
+          (e) => e.set_notification_message !== undefined,
+        );
+        if (!allNotification) {
+          warnings.push({
+            rulePath: path,
+            reason: '`to_after_key_up` is not supported yet — manipulator skipped.',
+          });
+          continue;
+        }
       }
 
       // Wave 2.7 — detect a layer child via `variable_if` condition. The
-      // matched variable name maps back to a layerName; the child is otherwise
-      // a normal basic rule that gains `layerName`.
-      const variableIfCond = conditions.find((c) => c.type === 'variable_if');
+      // matched variable name maps back to a layerName; the child is
+      // otherwise a normal basic rule that gains `layerName`.
+      // Wave 2.9 — when the rule is the locked-variant of a lock-on-tap
+      // child (variable_if `<layer>_locked == 1`), skip it — the unlocked
+      // variant alone is sufficient to round-trip the child once we know the
+      // parent has lockOnTaps. Picking the LAYER variable_if (not the
+      // helper companions) recovers the layerName cleanly.
+      const isLockedVariantChild = conditions.some(
+        (c) =>
+          c.type === 'variable_if' &&
+          typeof c.name === 'string' &&
+          c.name.endsWith('_locked') &&
+          c.value === 1,
+      );
+      if (isLockedVariantChild) {
+        // Locked-variant of a lock-on-tap child — silently skip. The
+        // unlocked variant (same `from`, separate manipulator) carries the
+        // round-trip data.
+        continue;
+      }
+      const variableIfCond = conditions.find(
+        (c) =>
+          c.type === 'variable_if' &&
+          typeof c.name === 'string' &&
+          !c.name.endsWith('_tapcount') &&
+          !c.name.endsWith('_locked'),
+      );
       let childLayerName: string | undefined;
       if (
         variableIfCond &&

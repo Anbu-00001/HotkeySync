@@ -402,3 +402,78 @@ describe('Share URL — Wave 2.8 one-shot layer (v6)', () => {
     expect(decoded.config).toEqual(state);
   });
 });
+
+describe('Share URL — Wave 2.9 notification (v7)', () => {
+  it('round-trips a one-shot layer with notification text', () => {
+    const state: ConfigState = {
+      os: 'mac',
+      selectedAppIds: ['__global'],
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim',
+          mode: 'oneshot',
+          notification: 'Vim layer armed',
+          description: 'one-shot with notification',
+        },
+      ],
+    };
+    const encoded = encodeConfig(state);
+    const decoded = decodeConfig(encoded);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.config).toEqual(state);
+  });
+
+  it('round-trips notification: "" (empty string = auto-label)', () => {
+    const state: ConfigState = {
+      os: 'mac',
+      selectedAppIds: ['__global'],
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim',
+          mode: 'oneshot',
+          notification: '',
+          description: 'auto-label',
+        },
+      ],
+    };
+    const encoded = encodeConfig(state);
+    const decoded = decodeConfig(encoded);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.config).toEqual(state);
+  });
+});
+
+describe('Share URL — Wave 2.9 lock-on-tap (v7)', () => {
+  it('round-trips a one-shot layer with oneshotLockOnTaps: 2', () => {
+    const state: ConfigState = {
+      os: 'mac',
+      selectedAppIds: ['__global'],
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim',
+          mode: 'oneshot',
+          oneshotLockOnTaps: 2,
+          notification: '',
+          cancelKeys: ['escape'],
+          description: 'lockable one-shot',
+        },
+      ],
+    };
+    const encoded = encodeConfig(state);
+    const decoded = decodeConfig(encoded);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.config).toEqual(state);
+  });
+});

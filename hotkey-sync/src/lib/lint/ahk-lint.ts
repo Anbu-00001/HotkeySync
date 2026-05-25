@@ -51,15 +51,34 @@ const DISABLE_RHS_RX = /^return\s*(?:;.*)?$/;
  *   - `{ global g_LayerXxx := true ; SetTimer(...) }` (activator + timeout)
  *   - `{ Send("...") ; global g_LayerXxx := false }` (child clears flag)
  */
+/**
+ * Loosened in Wave 2.9 to accept any combination of `; SetTimer(...)` (one-shot
+ * timeout) and `; ToolTip(...)` (armed-state notification) statements between
+ * the var assignment and the closing brace. The lint only cares that the RHS
+ * looks like a layer-control block, not the exact statement set.
+ */
 const LAYER_ACTIVATOR_RHS_RX =
-  /^\{\s*global\s+g_Layer\w+\s*:=\s*(?:true|false)(?:\s*;\s*SetTimer\([^)]*\))?\s*\}\s*(?:;.*)?$/;
+  /^\{\s*global\s+g_Layer\w+\s*:=\s*(?:true|false)[^}]*\}\s*(?:;.*)?$/;
 
 /**
  * Wave 2.8 — one-shot child handler: `{ Send("...") ; global g_Layer := false }`.
- * Matches once per file to fire AHK012 (one-shot caveat).
+ * Wave 2.9 optionally trails `; ToolTip(, , , N)`. Matches once per file to
+ * fire AHK012 (one-shot caveat).
  */
 const ONESHOT_CHILD_RHS_RX =
-  /^\{\s*Send\("(?:[^"\\]|\\.)*"\)\s*;\s*global\s+g_Layer\w+\s*:=\s*false\s*\}\s*(?:;.*)?$/;
+  /^\{\s*Send\("(?:[^"\\]|\\.)*"\)\s*;\s*global\s+g_Layer\w+\s*:=\s*false(?:\s*;\s*ToolTip\([^)]*\))?\s*\}\s*(?:;.*)?$/;
+
+/**
+ * Wave 2.9 — lock-on-tap helpers. Hotkey RHS is a single function call
+ * (activator, child, or cancel). The function declarations themselves are
+ * lines without `::` and are skipped by the line walker.
+ */
+const ONESHOT_LOCKABLE_TAP_RHS_RX =
+  /^HotkeySync_OneShotTap_\w+\(\s*\)\s*(?:;.*)?$/;
+const ONESHOT_LOCKABLE_CHILD_RHS_RX =
+  /^HotkeySync_OneShotChild_\w+\(\s*"(?:[^"\\]|\\.)*"\s*\)\s*(?:;.*)?$/;
+const ONESHOT_LOCKABLE_CANCEL_RHS_RX =
+  /^HotkeySync_OneShotCancel_\w+\(\s*\)\s*(?:;.*)?$/;
 /**
  * Wave 2.6 — detects a modifier-only Send RHS: `Send("{Blind}{LControl down}...")`.
  * Used to fire AHK010 once per file: AHK's emulation of "hold a modifier
@@ -216,13 +235,17 @@ export function lintAHK(source: string): AHKLintResult {
     }
 
     // RHS must be Send(...), TapHoldAction(...), bare `return` (disable),
-    // a Wave 2.7 layer activator, or a Wave 2.8 one-shot child handler.
+    // a Wave 2.7 layer activator, a Wave 2.8 one-shot child handler, or one
+    // of the Wave 2.9 lock-on-tap helper function calls.
     if (
       !SEND_RHS_RX.test(rhs) &&
       !TAP_HOLD_RHS_RX.test(rhs) &&
       !DISABLE_RHS_RX.test(rhs) &&
       !LAYER_ACTIVATOR_RHS_RX.test(rhs) &&
-      !ONESHOT_CHILD_RHS_RX.test(rhs)
+      !ONESHOT_CHILD_RHS_RX.test(rhs) &&
+      !ONESHOT_LOCKABLE_TAP_RHS_RX.test(rhs) &&
+      !ONESHOT_LOCKABLE_CHILD_RHS_RX.test(rhs) &&
+      !ONESHOT_LOCKABLE_CANCEL_RHS_RX.test(rhs)
     ) {
       push(
         'AHK005',
@@ -267,6 +290,20 @@ export function lintAHK(source: string): AHKLintResult {
           `Hotkey "${trigger}" is a one-shot layer child — AHK clears the layer flag at the end of the handler rather than via a native primitive. If focus changes between trigger-press and child-press (Alt-Tab, OS notification interrupt) the flag may persist; the lock-on-double-tap pattern (QMK ONESHOT_TAP_TOGGLE) is not yet supported on Windows.`,
         );
       }
+      continue;
+    }
+
+    // Wave 2.9 — lock-on-tap helper call shapes. These are recognised RHS
+    // forms but don't fire a dedicated lint code: the underlying helper
+    // function body lives in the same file and is responsible for the
+    // locked-state machine. The function definitions themselves are
+    // multi-line declarations whose individual lines (`global ...`,
+    // `if (...) {`, `}`) don't match HOTKEY_LINE_RX, so they're skipped.
+    if (
+      ONESHOT_LOCKABLE_TAP_RHS_RX.test(rhs) ||
+      ONESHOT_LOCKABLE_CHILD_RHS_RX.test(rhs) ||
+      ONESHOT_LOCKABLE_CANCEL_RHS_RX.test(rhs)
+    ) {
       continue;
     }
 

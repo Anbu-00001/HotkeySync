@@ -671,3 +671,219 @@ describe('generateKarabiner — one-shot layer (Wave 2.8)', () => {
     expect(out.rules.find((r) => r.description.includes('cancel'))).toBeUndefined();
   });
 });
+
+describe('generateKarabiner — notification (Wave 2.9)', () => {
+  it('emits set_notification_message in to_after_key_up of one-shot activator (KE #4104 workaround)', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim',
+          mode: 'oneshot',
+          notification: 'Vim layer armed',
+          description: 'oneshot with notification',
+        },
+      ],
+    });
+    const m = out.rules[0].manipulators[0];
+    // Notification lives in to_after_key_up, NOT in `to[]` alongside set_variable.
+    expect(m.to_after_key_up?.[0].set_notification_message).toEqual({
+      id: 'hks_vim',
+      text: 'Vim layer armed',
+    });
+    // to[] still carries only set_variable (no notification co-located).
+    expect(m.to?.[0].set_variable).toBeDefined();
+    expect(m.to?.some((e) => e.set_notification_message)).toBe(false);
+  });
+
+  it('empty notification string is auto-labeled from the layer name', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'my-layer',
+          mode: 'oneshot',
+          notification: '',
+          description: 'auto-label',
+        },
+      ],
+    });
+    const m = out.rules[0].manipulators[0];
+    expect(m.to_after_key_up?.[0].set_notification_message?.text).toBe('my-layer layer armed');
+  });
+
+  it('child rule appends notification-clear in to_after_key_up', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim',
+          mode: 'oneshot',
+          notification: '',
+          description: 'one-shot',
+        },
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'h',
+          action: 'left_arrow',
+          layerName: 'vim',
+          description: 'H to Left',
+        },
+      ],
+    });
+    const child = out.rules.find((r) => r.description.endsWith('H to Left'));
+    expect(child).toBeDefined();
+    const clear = child!.manipulators[0].to_after_key_up;
+    expect(clear?.[0].set_notification_message).toEqual({ id: 'hks_vim', text: '' });
+  });
+
+  it('cancel-key manipulators also clear the notification', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim',
+          mode: 'oneshot',
+          cancelKeys: ['escape'],
+          notification: '',
+          description: 'cancel test',
+        },
+      ],
+    });
+    const cancelRule = out.rules.find((r) =>
+      r.description.includes('cancel escape'),
+    );
+    expect(cancelRule).toBeDefined();
+    expect(
+      cancelRule!.manipulators[0].to_after_key_up?.[0].set_notification_message?.text,
+    ).toBe('');
+  });
+
+  it('timeout to_delayed_action also clears the notification when set', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim',
+          mode: 'oneshot',
+          oneshotTimeoutMs: 1500,
+          notification: '',
+          description: 'timeout + notification',
+        },
+      ],
+    });
+    const m = out.rules[0].manipulators[0];
+    const invoked = m.to_delayed_action?.to_if_invoked;
+    expect(invoked).toBeDefined();
+    expect(invoked!.some((e) => e.set_variable?.value === 0)).toBe(true);
+    expect(invoked!.some((e) => e.set_notification_message?.text === '')).toBe(true);
+  });
+});
+
+describe('generateKarabiner — lock-on-double-tap (Wave 2.9)', () => {
+  const makeLockableRule = () => ({
+    kind: 'layer' as const,
+    appId: '__global',
+    trigger: 'caps_lock',
+    layerName: 'vim',
+    mode: 'oneshot' as const,
+    oneshotLockOnTaps: 2 as const,
+    cancelKeys: ['escape'],
+    description: 'lockable one-shot',
+  });
+
+  it('emits exactly 3 manipulators (lock-clear, lock-promoter, first-tap) in order', () => {
+    const out = generateKarabiner({ os: 'mac', rules: [makeLockableRule()] });
+    const activator = out.rules.find((r) => r.description.includes('lockable one-shot'));
+    expect(activator).toBeDefined();
+    expect(activator!.manipulators).toHaveLength(3);
+    // First manipulator = lock-clear (variable_if locked == 1)
+    expect(
+      activator!.manipulators[0].conditions.some(
+        (c) => c.type === 'variable_if' && c.name?.endsWith('_locked') && c.value === 1,
+      ),
+    ).toBe(true);
+    // Second = lock-promoter (variable_if tapcount == 1 AND locked == 0)
+    expect(
+      activator!.manipulators[1].conditions.some(
+        (c) => c.type === 'variable_if' && c.name?.endsWith('_tapcount') && c.value === 1,
+      ),
+    ).toBe(true);
+    // Third = first-tap (no variable_if for tapcount/locked)
+    expect(
+      activator!.manipulators[2].conditions.every(
+        (c) =>
+          !(c.type === 'variable_if' && (c.name?.endsWith('_locked') || c.name?.endsWith('_tapcount'))),
+      ),
+    ).toBe(true);
+  });
+
+  it('first-tap manipulator has both to_if_invoked and to_if_canceled for the tap-window reset', () => {
+    const out = generateKarabiner({ os: 'mac', rules: [makeLockableRule()] });
+    const activator = out.rules.find((r) => r.description.includes('lockable one-shot'));
+    const firstTap = activator!.manipulators[2];
+    expect(firstTap.to_delayed_action?.to_if_invoked).toBeDefined();
+    expect(firstTap.to_delayed_action?.to_if_canceled).toBeDefined();
+    expect(firstTap.to_delayed_action!.to_if_canceled![0].set_variable?.value).toBe(0);
+  });
+
+  it('cancel-key manipulator gates on `_locked == 0` (cannot cancel a locked layer)', () => {
+    const out = generateKarabiner({ os: 'mac', rules: [makeLockableRule()] });
+    const cancelRule = out.rules.find((r) => r.description.includes('cancel escape'));
+    expect(cancelRule).toBeDefined();
+    expect(
+      cancelRule!.manipulators[0].conditions.some(
+        (c) => c.type === 'variable_if' && c.name?.endsWith('_locked') && c.value === 0,
+      ),
+    ).toBe(true);
+  });
+
+  it('emits TWO child manipulators per child (locked variant first, then unlocked)', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        makeLockableRule(),
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'h',
+          action: 'left_arrow',
+          layerName: 'vim',
+          description: 'H to Left',
+        },
+      ],
+    });
+    const child = out.rules.find((r) => r.description.endsWith('H to Left'));
+    expect(child!.manipulators).toHaveLength(2);
+    // Locked variant: conditions include locked == 1, to[] has only the action
+    expect(
+      child!.manipulators[0].conditions.some(
+        (c) => c.type === 'variable_if' && c.name?.endsWith('_locked') && c.value === 1,
+      ),
+    ).toBe(true);
+    expect(child!.manipulators[0].to).toHaveLength(1);
+    // Unlocked variant: conditions include locked == 0, to[] also clears layer + tapcount
+    expect(
+      child!.manipulators[1].conditions.some(
+        (c) => c.type === 'variable_if' && c.name?.endsWith('_locked') && c.value === 0,
+      ),
+    ).toBe(true);
+    expect(child!.manipulators[1].to!.length).toBeGreaterThan(1);
+  });
+});

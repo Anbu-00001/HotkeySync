@@ -257,20 +257,44 @@ const HOTIF_LAYER_AND_APP_RX =
  * one-shot) is detected separately via the description suffix `(one-shot on)`
  * or the presence of the SetTimer block.
  */
+/**
+ * The block-body (between `global g_Layer... := true` and the closing `}`) may
+ * contain ANY combination of `; SetTimer(..., -<ms>)` (one-shot timeout) and
+ * `; ToolTip("<text>", x, y, slot)` (Wave 2.9 notification) statements, in
+ * any order. Captured as the third group; downstream code walks it to recover
+ * timeout + notification text.
+ */
 const LAYER_ACTIVATOR_DOWN_RX =
-  /^\*(\S+?)::\s*\{\s*global\s+(g_Layer\w+)\s*:=\s*true(?:\s*;\s*SetTimer\([^}]*?,\s*-(\d+)\s*\))?\s*\}\s*(?:;(.*))?$/i;
+  /^\*(\S+?)::\s*\{\s*global\s+(g_Layer\w+)\s*:=\s*true([^}]*)\}\s*(?:;(.*))?$/i;
+const LAYER_TIMEOUT_INNER_RX = /;\s*SetTimer\([^,]*,\s*-(\d+)\s*\)/i;
+const LAYER_TOOLTIP_INNER_RX = /;\s*ToolTip\(\s*"((?:[^"\\]|\\.)*)"\s*,/i;
 const LAYER_ACTIVATOR_UP_RX =
   /^\*(\S+?)\s+up::\s*\{\s*global\s+g_Layer\w+\s*:=\s*false\s*\}/i;
 /**
+ * Wave 2.9 — lock-on-tap activator: `*Trigger:: HotkeySync_OneShotTap_X()`.
+ * The Pascal suffix encodes the layerName. Discriminates from the inline
+ * one-shot activator (which uses an inline `{ ... }` block).
+ */
+const LAYER_LOCK_ACTIVATOR_RX =
+  /^\*(\S+?)::\s*HotkeySync_OneShotTap_(\w+)\(\s*\)\s*(?:;(.*))?$/i;
+/** Wave 2.9 — child function call: `h:: HotkeySync_OneShotChild_X("{Left}")`. */
+const LAYER_LOCK_CHILD_RX =
+  /^(\S+?)::\s*HotkeySync_OneShotChild_(\w+)\(\s*["']([^"']*)["']\s*\)\s*(?:;(.*))?$/i;
+/** Wave 2.9 — cancel function call: `Escape:: HotkeySync_OneShotCancel_X()`. Discarded on import. */
+const LAYER_LOCK_CANCEL_RX =
+  /^(\S+?)::\s*HotkeySync_OneShotCancel_\w+\(\s*\)\s*(?:;.*)?$/i;
+/**
  * Wave 2.8 — one-shot child handler:
  *   `h:: { Send("{Left}") ; global g_LayerVimArrows := false }  ; Caps tap then H → Left`
+ *   Wave 2.9: optional trailing `; ToolTip(, , , N)` when parent layer has
+ *   `notification` set.
  * Captures: 1=trigger, 2=action, 3=layer-var, 4=description.
  */
 const ONESHOT_CHILD_RX =
-  /^(\S+?)::\s*\{\s*Send\(\s*["']([^"']*)["']\s*\)\s*;\s*global\s+(g_Layer\w+)\s*:=\s*false\s*\}\s*(?:;(.*))?$/;
-/** One-shot cancel-key handler: `Escape:: { global g_LayerXxx := false }`. Discarded on import (cancelKeys defaults to ['escape']). */
+  /^(\S+?)::\s*\{\s*Send\(\s*["']([^"']*)["']\s*\)\s*;\s*global\s+(g_Layer\w+)\s*:=\s*false(?:\s*;\s*ToolTip\([^)]*\))?\s*\}\s*(?:;(.*))?$/;
+/** One-shot cancel-key handler: `Escape:: { global g_LayerXxx := false }`. Wave 2.9 optionally trails `; ToolTip(, , , N)`. Discarded on import. */
 const ONESHOT_CANCEL_KEY_RX =
-  /^(\S+?)::\s*\{\s*global\s+g_Layer\w+\s*:=\s*false\s*\}\s*(?:;.*)?$/;
+  /^(\S+?)::\s*\{\s*global\s+g_Layer\w+\s*:=\s*false(?:\s*;\s*ToolTip\([^)]*\))?\s*\}\s*(?:;.*)?$/;
 /**
  * Matches a HotkeySync-emitted global-with-exceptions directive, e.g.
  *   `#HotIf !(WinActive("ahk_exe a.exe") || WinActive("ahk_exe b.exe"))`
@@ -461,16 +485,122 @@ export function parseAHK(source: string): AHKImportResult {
     if (LAYER_ACTIVATOR_UP_RX.test(line)) {
       continue;
     }
+
+    // Wave 2.9 — lock-on-tap activator (function-call shape). Must match
+    // BEFORE the regular activator regex, since the prefix `*Trigger::` is
+    // shared with the inline `{ ... }` shape.
+    const lockActivatorMatch = line.match(LAYER_LOCK_ACTIVATOR_RX);
+    if (lockActivatorMatch) {
+      const [, lockTriggerExpr, lockPascal, lockDescRaw] = lockActivatorMatch;
+      const lockDesc = (lockDescRaw ?? '')
+        .trim()
+        .replace(/\s*\(one-shot lockable on\)\s*$/i, '')
+        .trim();
+      const lockTrigger = parseAHKKeyExpression(lockTriggerExpr);
+      const lockLayerName = layerNameFromAhkVar(`g_Layer${lockPascal}`);
+      if (!lockTrigger || !lockLayerName) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: `Could not parse lock-on-tap activator "${line}".`,
+        });
+        continue;
+      }
+      if (currentAppId === null) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: 'lock-on-tap activator inside an unresolved-app #HotIf block — skipped.',
+        });
+        continue;
+      }
+      const lockAppId = currentAppId;
+      if (!seenApps.has(lockAppId)) {
+        seenApps.add(lockAppId);
+        selectedOrder.push(lockAppId);
+      }
+      const layerRule: LayerHotkeyRule = {
+        kind: 'layer',
+        appId: lockAppId,
+        trigger: lockTrigger.combo,
+        layerName: lockLayerName,
+        mode: 'oneshot',
+        oneshotLockOnTaps: 2,
+        description: lockDesc.length > 0 ? lockDesc : 'Imported lockable one-shot',
+      };
+      if (currentExceptApps) {
+        (layerRule as LayerHotkeyRule & { exceptApps?: string[] }).exceptApps =
+          currentExceptApps;
+      }
+      rules.push(layerRule);
+      continue;
+    }
+
+    // Lock-on-tap cancel-key function call — discard (cancelKeys defaults
+    // to ['escape'] and re-emit will recreate it).
+    if (LAYER_LOCK_CANCEL_RX.test(line)) {
+      continue;
+    }
+
+    // Lock-on-tap child function call — convert to a basic rule with
+    // layerName set so the parent layer pulls it back in.
+    const lockChildMatch = line.match(LAYER_LOCK_CHILD_RX);
+    if (lockChildMatch) {
+      const [, lcTriggerExpr, lcPascal, lcActionExpr, lcDescRaw] = lockChildMatch;
+      const lcDesc = (lcDescRaw ?? '').trim();
+      const lcTrigger = parseAHKKeyExpression(lcTriggerExpr);
+      const lcLayerName = layerNameFromAhkVar(`g_Layer${lcPascal}`);
+      const lcAction = parseAHKKeyExpression(lcActionExpr);
+      if (!lcTrigger || !lcLayerName || !lcAction) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: `Could not parse lock-on-tap child "${line}".`,
+        });
+        continue;
+      }
+      if (currentAppId === null) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: 'lock-on-tap child inside an unresolved-app #HotIf block — skipped.',
+        });
+        continue;
+      }
+      const lcAppId = currentAppId;
+      if (!seenApps.has(lcAppId)) {
+        seenApps.add(lcAppId);
+        selectedOrder.push(lcAppId);
+      }
+      rules.push({
+        kind: 'basic',
+        appId: lcAppId,
+        trigger: lcTrigger.combo,
+        action: lcAction.combo,
+        description: lcDesc.length > 0 ? lcDesc : 'Imported lock-layer child',
+        layerName: lcLayerName,
+        ...(currentExceptApps ? { exceptApps: currentExceptApps } : {}),
+      });
+      continue;
+    }
     const layerActivatorMatch = line.match(LAYER_ACTIVATOR_DOWN_RX);
     if (layerActivatorMatch) {
-      const [, laTriggerExpr, laVarName, laTimeoutMs, laDescriptionRaw] =
+      const [, laTriggerExpr, laVarName, laInnerStatements, laDescriptionRaw] =
         layerActivatorMatch;
-      // Wave 2.8 — detect one-shot via either a captured SetTimer timeout OR
-      // the description suffix our generator emits. Hold layers keep their
-      // current default.
+      // Wave 2.8 — pull the SetTimer timeout out of the inner statements.
+      // Wave 2.9 — pull the ToolTip text out too.
+      const timeoutMatch = (laInnerStatements ?? '').match(LAYER_TIMEOUT_INNER_RX);
+      const laTimeoutMs = timeoutMatch?.[1];
+      const toolTipMatch = (laInnerStatements ?? '').match(LAYER_TOOLTIP_INNER_RX);
+      const laNotificationText =
+        toolTipMatch?.[1] !== undefined
+          ? toolTipMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+          : undefined;
+      // Detect one-shot via captured SetTimer/ToolTip OR description suffix.
       const laDescriptionRawTrimmed = (laDescriptionRaw ?? '').trim();
       const isOneShot =
         laTimeoutMs !== undefined ||
+        laNotificationText !== undefined ||
         /\(one-shot on\)\s*$/i.test(laDescriptionRawTrimmed);
       const laDescription = laDescriptionRawTrimmed
         .replace(/\s*\(one-shot on\)\s*$/i, '')
@@ -512,6 +642,14 @@ export function parseAHK(source: string): AHKImportResult {
         if (Number.isFinite(ms) && ms >= 100 && ms <= 10_000) {
           layerRule.oneshotTimeoutMs = ms;
         }
+      }
+      // Wave 2.9 — recover the notification text. The generator emits the
+      // auto-label `"<layer> layer armed"` when the user passed an empty
+      // string; collapse that back to '' so round-trip is byte-stable.
+      if (isOneShot && laNotificationText !== undefined) {
+        const autoLabel = `${laLayerName} layer armed`;
+        layerRule.notification =
+          laNotificationText === autoLabel ? '' : laNotificationText;
       }
       if (currentExceptApps) {
         (layerRule as LayerHotkeyRule & { exceptApps?: string[] }).exceptApps =

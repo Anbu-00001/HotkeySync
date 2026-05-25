@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Trash2, AlertTriangle, ArrowRight, Zap, Ban, Globe, ShieldAlert, Layers } from 'lucide-react';
+import { Trash2, AlertTriangle, ArrowRight, Zap, Ban, Globe, ShieldAlert, Layers, Bell, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KeyCaptureInput } from '@/components/key-capture-input';
@@ -163,6 +163,28 @@ export function RuleRow({
               >
                 {rule.oneshotTimeoutMs}&thinsp;ms timeout
               </span>
+            )}
+            {rule.mode === 'oneshot' && rule.notification !== undefined && (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1"
+                data-testid="layer-notification-chip"
+                title="Shows an on-screen indicator while the layer is armed (Karabiner HUD on macOS; ToolTip on Windows)."
+              >
+                <Bell className="h-2.5 w-2.5" />
+                {rule.notification === '' ? `${rule.layerName} armed` : rule.notification}
+              </Badge>
+            )}
+            {rule.mode === 'oneshot' && rule.oneshotLockOnTaps === 2 && (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1"
+                data-testid="layer-lock-chip"
+                title="Double-tap the trigger to lock the layer on. Re-tap the trigger to unlock. Cancel keys and the disarm timeout don't clear a locked layer (mirrors QMK ONESHOT_TAP_TOGGLE)."
+              >
+                <Lock className="h-2.5 w-2.5" />
+                Lock on 2 taps
+              </Badge>
             )}
             {rule.tapAction !== undefined && (
               <>
