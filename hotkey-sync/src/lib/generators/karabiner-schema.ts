@@ -33,31 +33,96 @@ const karabinerFromSchema = z
   })
   .strict();
 
+/**
+ * `to` event. Single shape with two valid configurations: key form
+ * (`key_code` + optional modifiers/lazy) for normal output, or variable form
+ * (`set_variable`) for Wave 2.7 layer toggles. The refine enforces
+ * "exactly one of key_code / set_variable" so structural drift is caught.
+ */
 const karabinerToSchema = z
   .object({
-    key_code: keyCodeSchema,
+    key_code: keyCodeSchema.optional(),
     modifiers: z.array(z.string().min(1)).optional(),
+    // Wave 2.6 — `lazy: true` suppresses raw modifier-down firing (only fires
+    // when chained with another key). Used on ModifierAction outputs and on
+    // Wave 2.7 layer triggers when passthroughModifiers is enabled.
+    lazy: z.boolean().optional(),
+    // Wave 2.7 — variable-toggle form used by layer activators.
+    set_variable: z
+      .object({
+        name: z.string().min(1),
+        value: z.number().int(),
+      })
+      .strict()
+      .optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (to) => (to.key_code !== undefined) !== (to.set_variable !== undefined),
+    {
+      message:
+        'to event must have exactly one of `key_code` or `set_variable`',
+    },
+  );
 
+/**
+ * Manipulator condition. Two valid configurations:
+ *   - application form: `frontmost_application_if` / `_unless` with
+ *     `bundle_identifiers`.
+ *   - variable form (Wave 2.7): `variable_if` with `name` + `value`.
+ * The refine enforces field set matches the discriminator.
+ */
 const karabinerConditionSchema = z
   .object({
-    // `frontmost_application_if` for per-app rules; `_unless` for global rules
-    // with an exclusion list. Karabiner accepts both at the same path.
     type: z.union([
       z.literal('frontmost_application_if'),
       z.literal('frontmost_application_unless'),
+      z.literal('variable_if'),
     ]),
-    bundle_identifiers: z.array(z.string().min(1)).min(1),
+    bundle_identifiers: z.array(z.string().min(1)).min(1).optional(),
+    name: z.string().min(1).optional(),
+    value: z.number().int().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (c) => {
+      if (c.type === 'variable_if') {
+        return c.name !== undefined && c.value !== undefined && c.bundle_identifiers === undefined;
+      }
+      return (
+        c.bundle_identifiers !== undefined &&
+        c.name === undefined &&
+        c.value === undefined
+      );
+    },
+    {
+      message:
+        'condition fields must match `type`: application_* needs bundle_identifiers; variable_if needs name + value',
+    },
+  );
 
 const karabinerManipulatorParametersSchema = z
   .object({
     'basic.to_if_alone_timeout_milliseconds': z.number().int().positive().optional(),
     'basic.to_if_held_down_threshold_milliseconds': z.number().int().positive().optional(),
+    // Wave 2.8 — one-shot layer auto-disarm delay.
+    'basic.to_delayed_action_delay_milliseconds': z.number().int().positive().optional(),
   })
   .strict();
+
+/**
+ * Wave 2.8 — `to_delayed_action` block. One-shot layers fire `to_if_invoked`
+ * after the timeout to clear the layer variable when no child key fired.
+ */
+const karabinerToDelayedActionSchema = z
+  .object({
+    to_if_invoked: z.array(karabinerToSchema).min(1).optional(),
+    to_if_canceled: z.array(karabinerToSchema).min(1).optional(),
+  })
+  .strict()
+  .refine((d) => d.to_if_invoked !== undefined || d.to_if_canceled !== undefined, {
+    message: 'to_delayed_action must include at least one of to_if_invoked or to_if_canceled',
+  });
 
 /**
  * Manipulator schema — accepts both basic (with `to`) and tap_hold (with
@@ -72,6 +137,10 @@ const karabinerManipulatorSchema = z
     to: z.array(karabinerToSchema).min(1).optional(),
     to_if_alone: z.array(karabinerToSchema).min(1).optional(),
     to_if_held_down: z.array(karabinerToSchema).min(1).optional(),
+    // Wave 2.7 — layer rules clear their variable here on trigger release.
+    to_after_key_up: z.array(karabinerToSchema).min(1).optional(),
+    // Wave 2.8 — one-shot layer auto-disarm via to_if_invoked.
+    to_delayed_action: karabinerToDelayedActionSchema.optional(),
     parameters: karabinerManipulatorParametersSchema.optional(),
     // Wave 2.5: global rules with no exception list emit an empty conditions
     // array (Karabiner treats that as "apply in every app"). Per-app rules

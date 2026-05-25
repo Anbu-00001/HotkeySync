@@ -10,6 +10,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useConfigStore } from '@/store/useConfigStore';
+import { renderActionLabel } from '@/lib/actions';
 import { parseAHK, type AHKImportResult } from '@/lib/import/ahk-parser';
 import {
   parseKarabinerJSON,
@@ -347,9 +348,9 @@ function ImportPreview({
               <li key={i} className="text-muted-foreground">
                 <strong>{r.appId}</strong>: {r.trigger} →{' '}
                 {r.kind === 'basic'
-                  ? r.action
+                  ? renderActionLabel(r.action)
                   : r.kind === 'tap_hold'
-                    ? `${r.tapAction} (tap) / ${r.holdAction} (hold @${r.tapTimeoutMs}ms)`
+                    ? `${r.tapAction} (tap) / ${renderActionLabel(r.holdAction)} (hold @${r.tapTimeoutMs}ms)`
                     : '(disabled)'}{' '}
                 {r.description && (
                   <span className={cn('text-foreground/60')}>({r.description})</span>

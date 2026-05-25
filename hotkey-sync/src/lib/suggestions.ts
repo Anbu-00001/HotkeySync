@@ -280,17 +280,23 @@ const SUGGESTIONS: Suggestion[] = [
   // Global rules (Wave 2.5). Both are the highest-signal candidates in the
   // entire research corpus and ship with the canonical exclusion list
   // pre-filled (terminals + screen share + Xcode).
+  // Wave 2.6 — full dual-role Caps Lock. Supersedes the basic Caps→Esc
+  // suggestion (the simpler form remains available as a preset rule, but a
+  // single suggestion per (app,trigger) is enforced by `suggestions.test.ts`
+  // and the dual-role is the canonical shipped recommendation now).
   {
-    id: 'global-caps-lock-escape',
+    id: 'global-caps-lock-tap-hold-ctrl',
     tag: 'productivity',
     rationale:
-      'Caps Lock as Escape is the most-imported single rule on the Karabiner gallery (HN canon + Sysinternals Ctrl2Cap). Stops accidental shouting and gives vim/modal-editor users a giant Esc key.',
+      'The iconic dual-role: tap Caps Lock for Escape, hold for Ctrl. Karabiner gallery\'s top-cited rule (HN canon). AHK emulates with paired down/up handlers — solid but watch the lint for fast-typing-roll caveats.',
     rule: {
-      kind: 'basic',
+      kind: 'tap_hold',
       appId: GLOBAL_APP_ID,
       trigger: 'caps_lock',
-      action: 'escape',
-      description: 'Caps Lock → Escape',
+      tapAction: 'escape',
+      holdAction: { kind: 'modifier', modifiers: ['ctrl'], lazy: true },
+      tapTimeoutMs: 200,
+      description: 'Caps Lock → tap Esc / hold Ctrl',
       exceptApps: DEFAULT_GLOBAL_EXCEPTIONS,
     },
   },

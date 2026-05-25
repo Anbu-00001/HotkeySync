@@ -12,7 +12,8 @@
  * Pure function: deterministic, side-effect-free, fully unit-testable.
  */
 
-import type { HotkeyRule } from '@/types';
+import type { Action, HotkeyRule } from '@/types';
+import { actionBehaviourKey } from '@/lib/actions';
 
 /**
  * One usage of a trigger in one app. `behaviourKey` is the stable composite
@@ -24,7 +25,7 @@ export type TriggerUsage =
       appId: string;
       kind: 'basic';
       behaviourKey: string;
-      action: string;
+      action: Action;
       description: string;
     }
   | {
@@ -32,7 +33,7 @@ export type TriggerUsage =
       kind: 'tap_hold';
       behaviourKey: string;
       tapAction: string;
-      holdAction: string;
+      holdAction: Action;
       tapTimeoutMs: number;
       description: string;
     }
@@ -55,9 +56,9 @@ export interface CrossAppUsage {
 }
 
 function behaviourKey(rule: HotkeyRule): string {
-  if (rule.kind === 'basic') return `basic:${rule.action}`;
+  if (rule.kind === 'basic') return `basic:${actionBehaviourKey(rule.action)}`;
   if (rule.kind === 'tap_hold') {
-    return `tap_hold:${rule.tapAction}|${rule.holdAction}@${rule.tapTimeoutMs}ms`;
+    return `tap_hold:${rule.tapAction}|${actionBehaviourKey(rule.holdAction)}@${rule.tapTimeoutMs}ms`;
   }
   return 'disable:';
 }

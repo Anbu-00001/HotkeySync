@@ -355,6 +355,57 @@ describe('generateAHK — global rules (Wave 2.5)', () => {
   });
 });
 
+describe('generateAHK — modifier actions (Wave 2.6)', () => {
+  it('basic rule with single-modifier action emits paired *Trigger down + up', () => {
+    const out = generateAHK(
+      makeConfig([
+        {
+          kind: 'basic',
+          appId: 'vs-code',
+          trigger: 'caps_lock',
+          action: { kind: 'modifier', modifiers: ['ctrl'] },
+          description: 'Caps as Ctrl',
+        },
+      ]),
+    );
+    expect(out).toContain('*CapsLock:: Send("{Blind}{LControl down}")');
+    expect(out).toContain('*CapsLock up:: Send("{Blind}{LControl up}")');
+  });
+
+  it('Hyper bundle emits all four modifier down events in canonical order', () => {
+    const out = generateAHK(
+      makeConfig([
+        {
+          kind: 'basic',
+          appId: 'vs-code',
+          trigger: 'caps_lock',
+          action: { kind: 'modifier', modifiers: ['ctrl', 'shift', 'alt', 'meta'] },
+          description: 'Caps as Hyper',
+        },
+      ]),
+    );
+    // Canonical order: ctrl, shift, alt, meta. {Blind} stays at the head.
+    expect(out).toContain('*CapsLock:: Send("{Blind}{LControl down}{LShift down}{LAlt down}{LWin down}")');
+  });
+
+  it('tap_hold with ModifierAction holdAction emits TapHoldAction with {LControl down} hold', () => {
+    const out = generateAHK(
+      makeConfig([
+        {
+          kind: 'tap_hold',
+          appId: 'vs-code',
+          trigger: 'caps_lock',
+          tapAction: 'escape',
+          holdAction: { kind: 'modifier', modifiers: ['ctrl'], lazy: true },
+          tapTimeoutMs: 200,
+          description: 'Caps tap=Esc / hold=Ctrl',
+        },
+      ]),
+    );
+    expect(out).toMatch(/CapsLock:: TapHoldAction\(200, "\{Escape\}", "\{LControl down\}"\)/);
+  });
+});
+
 describe('generateAHK — disable rule', () => {
   const disableRule: HotkeyRule = {
     kind: 'disable',
@@ -388,5 +439,197 @@ describe('generateAHK — disable rule', () => {
       ]),
     );
     expect(out2).toContain('; Skipped malformed disable rule');
+  });
+});
+
+describe('generateAHK — layer rules (Wave 2.7)', () => {
+  it('emits a `global g_LayerXxx := false` flag declaration for each layer', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim-arrows',
+          mode: 'hold',
+          description: 'Caps layer',
+        },
+      ],
+    });
+    expect(out).toContain('global g_LayerVimArrows := false');
+  });
+
+  it('emits a SetTimer watchdog and HotkeySync_LayerWatchdog function', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim-arrows',
+          mode: 'hold',
+          description: 'Caps layer',
+        },
+      ],
+    });
+    expect(out).toMatch(/SetTimer\(HotkeySync_LayerWatchdog,\s*1000\)/);
+    expect(out).toMatch(/HotkeySync_LayerWatchdog\(\)\s*\{/);
+    expect(out).toMatch(/GetKeyState\("CapsLock", "P"\)/);
+  });
+
+  it('emits paired *Trigger down/up handlers toggling the flag', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim-arrows',
+          mode: 'hold',
+          description: 'Caps layer',
+        },
+      ],
+    });
+    expect(out).toMatch(/\*CapsLock::\s*\{\s*global g_LayerVimArrows := true\s*\}/);
+    expect(out).toMatch(/\*CapsLock up::\s*\{\s*global g_LayerVimArrows := false\s*\}/);
+  });
+
+  it('groups layer children under `#HotIf g_LayerXxx` blocks', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim-arrows',
+          mode: 'hold',
+          description: 'Caps layer',
+        },
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'h',
+          action: 'left_arrow',
+          layerName: 'vim-arrows',
+          description: 'Caps+H → Left',
+        },
+      ],
+    });
+    expect(out).toMatch(/#HotIf g_LayerVimArrows\s*$/m);
+    expect(out).toMatch(/h::\s*Send\("\{Left\}"\)/);
+  });
+});
+
+describe('generateAHK — one-shot layer (Wave 2.8)', () => {
+  it('emits a one-shot activator without an `up` partner', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'os-vim',
+          mode: 'oneshot',
+          description: 'one-shot',
+        },
+      ],
+    });
+    expect(out).toMatch(/\*CapsLock::\s*\{\s*global g_LayerOsVim := true\s*\}/);
+    expect(out).not.toMatch(/\*CapsLock up::/);
+  });
+
+  it('emits SetTimer with negative ms when oneshotTimeoutMs is set', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'os-vim',
+          mode: 'oneshot',
+          oneshotTimeoutMs: 2000,
+          description: 'one-shot timed',
+        },
+      ],
+    });
+    expect(out).toMatch(/SetTimer\(\(\)\s*=>\s*HotkeySync_OneShotExpire_OsVim\(\),\s*-2000\)/);
+    expect(out).toMatch(/HotkeySync_OneShotExpire_OsVim\(\)/);
+  });
+
+  it('wraps one-shot child handler with flag-clear at end', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'os-vim',
+          mode: 'oneshot',
+          description: 'one-shot',
+        },
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'h',
+          action: 'left_arrow',
+          layerName: 'os-vim',
+          description: 'one-shot H to left',
+        },
+      ],
+    });
+    expect(out).toMatch(
+      /h::\s*\{\s*Send\("\{Left\}"\)\s*;\s*global g_LayerOsVim := false\s*\}/,
+    );
+  });
+
+  it('emits cancel-key rules inside the one-shot #HotIf block', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'os-vim',
+          mode: 'oneshot',
+          cancelKeys: ['escape'],
+          description: 'one-shot cancel',
+        },
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'h',
+          action: 'left_arrow',
+          layerName: 'os-vim',
+          description: 'one-shot H',
+        },
+      ],
+    });
+    expect(out).toMatch(/Escape::\s*\{\s*global g_LayerOsVim := false\s*\}/);
+  });
+
+  it('watchdog tracks only hold layers, not one-shot', () => {
+    const out = generateAHK({
+      os: 'windows',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'os-vim',
+          mode: 'oneshot',
+          description: 'one-shot only',
+        },
+      ],
+    });
+    // No watchdog SetTimer should appear when the file has no hold layers.
+    expect(out).not.toMatch(/SetTimer\(HotkeySync_LayerWatchdog/);
   });
 });

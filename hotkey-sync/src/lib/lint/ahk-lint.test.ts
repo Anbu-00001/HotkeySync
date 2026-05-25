@@ -186,4 +186,67 @@ ${helper}
     const out = lintAHK(src);
     expect(out.issues).toEqual([]);
   });
+
+  it('Wave 2.6 — AHK010 fires once on the first modifier-down line', () => {
+    const src = `
+#Requires AutoHotkey v2.0+
+#SingleInstance Force
+
+#HotIf WinActive("ahk_exe code.exe")
+*CapsLock:: Send("{Blind}{LControl down}")  ; Caps as Ctrl
+*CapsLock up:: Send("{Blind}{LControl up}")
+*F13:: Send("{Blind}{LControl down}{LShift down}{LAlt down}{LWin down}")  ; F13 as Hyper
+*F13 up:: Send("{Blind}{LControl up}{LShift up}{LAlt up}{LWin up}")
+#HotIf
+`.trim();
+    const out = lintAHK(src);
+    const ahk010 = out.issues.filter((i) => i.code === 'AHK010');
+    expect(ahk010).toHaveLength(1);
+    expect(ahk010[0].severity).toBe('warning');
+    expect(ahk010[0].message).toMatch(/emulated modifier-only action/i);
+  });
+
+  it('Wave 2.7 — AHK011 fires once on the first layer activator', () => {
+    const src = `
+#Requires AutoHotkey v2.0+
+#SingleInstance Force
+global g_LayerVimArrows := false
+
+#HotIf WinActive("ahk_exe code.exe")
+*CapsLock:: { global g_LayerVimArrows := true }  ; Caps layer
+#HotIf
+
+#HotIf g_LayerVimArrows
+h:: Send("{Left}")
+#HotIf
+`.trim();
+    const out = lintAHK(src);
+    const ahk011 = out.issues.filter((i) => i.code === 'AHK011');
+    expect(ahk011).toHaveLength(1);
+    expect(ahk011[0].severity).toBe('warning');
+    expect(ahk011[0].message).toMatch(/emulated layer/i);
+    // AHK005 (unrecognised RHS) must NOT fire on the activator line.
+    expect(out.issues.filter((i) => i.code === 'AHK005')).toEqual([]);
+  });
+
+  it('Wave 2.8 — AHK012 fires once on the first one-shot child handler', () => {
+    const src = `
+#Requires AutoHotkey v2.0+
+#SingleInstance Force
+global g_LayerOsVim := false
+
+*CapsLock:: { global g_LayerOsVim := true }  ; one-shot (one-shot on)
+
+#HotIf g_LayerOsVim
+h:: { Send("{Left}") ; global g_LayerOsVim := false }  ; H to Left
+j:: { Send("{Down}") ; global g_LayerOsVim := false }  ; J to Down
+#HotIf
+`.trim();
+    const out = lintAHK(src);
+    const ahk012 = out.issues.filter((i) => i.code === 'AHK012');
+    expect(ahk012).toHaveLength(1);
+    expect(ahk012[0].severity).toBe('warning');
+    expect(ahk012[0].message).toMatch(/one-shot/i);
+    expect(out.issues.filter((i) => i.code === 'AHK005')).toEqual([]);
+  });
 });

@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { HotkeyRule, OS } from '@/types';
+import type { Action, HotkeyRule, OS } from '@/types';
 import { parseKeyCombo, serializeKeyCombo } from '@/lib/keys';
+import { normaliseAction } from '@/lib/actions';
 import type { Preset } from '@/data/presets';
 
 export interface ConfigState {
@@ -30,11 +31,11 @@ export type URLImportStatus =
  */
 export interface HotkeyRuleUpdate {
   description?: string;
-  // basic-only
-  action?: string;
+  // basic-only — Action: string (key combo) or ModifierAction object (Wave 2.6).
+  action?: Action;
   // tap_hold-only
   tapAction?: string;
-  holdAction?: string;
+  holdAction?: Action;
   tapTimeoutMs?: number;
 }
 
@@ -151,22 +152,33 @@ export const useConfigStore = create<ConfigStore>()(
       addRule: (rule) =>
         set((state) => {
           const normalisedTrigger = normaliseTrigger(rule.trigger);
-          // Normalise every action-shaped field; all kinds use canonical combos.
+          // Normalise every action-shaped field. Wave 2.6: `action` /
+          // `holdAction` can be a string or a ModifierAction object —
+          // `normaliseAction` handles both.
           const next: HotkeyRule =
             rule.kind === 'basic'
               ? {
                   ...rule,
                   trigger: normalisedTrigger,
-                  action: normaliseTrigger(rule.action),
+                  action: normaliseAction(rule.action),
                 }
               : rule.kind === 'tap_hold'
                 ? {
                     ...rule,
                     trigger: normalisedTrigger,
                     tapAction: normaliseTrigger(rule.tapAction),
-                    holdAction: normaliseTrigger(rule.holdAction),
+                    holdAction: normaliseAction(rule.holdAction),
                   }
-                : { ...rule, trigger: normalisedTrigger };
+                : rule.kind === 'layer'
+                  ? {
+                      ...rule,
+                      trigger: normalisedTrigger,
+                      tapAction:
+                        rule.tapAction !== undefined
+                          ? normaliseAction(rule.tapAction)
+                          : undefined,
+                    }
+                  : { ...rule, trigger: normalisedTrigger };
           const existingIndex = state.rules.findIndex(
             (r) => r.appId === next.appId && r.trigger === normalisedTrigger,
           );
@@ -196,7 +208,7 @@ export const useConfigStore = create<ConfigStore>()(
               description: updates.description ?? current.description,
               action:
                 updates.action !== undefined
-                  ? normaliseTrigger(updates.action)
+                  ? normaliseAction(updates.action)
                   : current.action,
             };
           } else if (current.kind === 'tap_hold') {
@@ -209,7 +221,7 @@ export const useConfigStore = create<ConfigStore>()(
                   : current.tapAction,
               holdAction:
                 updates.holdAction !== undefined
-                  ? normaliseTrigger(updates.holdAction)
+                  ? normaliseAction(updates.holdAction)
                   : current.holdAction,
               tapTimeoutMs:
                 updates.tapTimeoutMs !== undefined
@@ -231,10 +243,30 @@ export const useConfigStore = create<ConfigStore>()(
       removeRule: (appId, trigger) =>
         set((state) => {
           const normalised = normaliseTrigger(trigger);
-          const next = state.rules.filter(
-            (r) => !(r.appId === appId && r.trigger === normalised),
+          const victim = state.rules.find(
+            (r) => r.appId === appId && r.trigger === normalised,
           );
-          if (next.length === state.rules.length) return {};
+          if (!victim) return {};
+          // Wave 2.7 — if we're removing a layer rule, clear `layerName` from
+          // every child basic rule so they don't become orphans referencing a
+          // layer that no longer exists. Children remain as normal basic rules
+          // (which fire unconditionally) — losing the parent layer is a user
+          // decision, not a reason to silently delete their rebinds.
+          const orphanedLayer = victim.kind === 'layer' ? victim.layerName : null;
+          const next = state.rules
+            .filter((r) => !(r.appId === appId && r.trigger === normalised))
+            .map((r): HotkeyRule => {
+              if (
+                orphanedLayer &&
+                r.kind === 'basic' &&
+                r.layerName === orphanedLayer
+              ) {
+                const { layerName: _drop, ...rest } = r;
+                void _drop;
+                return rest;
+              }
+              return r;
+            });
           return { rules: next };
         }),
 
@@ -255,16 +287,25 @@ export const useConfigStore = create<ConfigStore>()(
                 ? {
                     ...rule,
                     trigger: normalisedTrigger,
-                    action: normaliseTrigger(rule.action),
+                    action: normaliseAction(rule.action),
                   }
                 : rule.kind === 'tap_hold'
                   ? {
                       ...rule,
                       trigger: normalisedTrigger,
                       tapAction: normaliseTrigger(rule.tapAction),
-                      holdAction: normaliseTrigger(rule.holdAction),
+                      holdAction: normaliseAction(rule.holdAction),
                     }
-                  : { ...rule, trigger: normalisedTrigger };
+                  : rule.kind === 'layer'
+                    ? {
+                        ...rule,
+                        trigger: normalisedTrigger,
+                        tapAction:
+                          rule.tapAction !== undefined
+                            ? normaliseAction(rule.tapAction)
+                            : undefined,
+                      }
+                    : { ...rule, trigger: normalisedTrigger };
             const index = rules.findIndex(
               (r) => r.appId === next.appId && r.trigger === normalisedTrigger,
             );

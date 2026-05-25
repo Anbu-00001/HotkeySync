@@ -7,6 +7,7 @@ import { simulateForApps } from '@/lib/simulator';
 import { detectCrossAppUsage } from '@/lib/cross-app-conflicts';
 import { parseKeyCombo, serializeKeyCombo, type Modifier, type TriggerKey } from '@/lib/keys';
 import { KeyBadge } from '@/components/key-badge';
+import { ActionBadge } from '@/components/action-badge';
 import { cn } from '@/lib/utils';
 import appsData from '@/data/apps.json';
 import type { App } from '@/types';
@@ -217,7 +218,7 @@ export function KeyboardSimulator(): React.JSX.Element {
                       o.matched.kind === 'basic' ? (
                         <>
                           <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                          <KeyBadge combo={o.matched.action} size="sm" />
+                          <ActionBadge action={o.matched.action} size="sm" />
                           <span className="text-muted-foreground">
                             ({o.matched.description})
                           </span>
@@ -230,7 +231,7 @@ export function KeyboardSimulator(): React.JSX.Element {
                               tap&nbsp;(&lt;{o.matched.tapTimeoutMs}&thinsp;ms): <KeyBadge combo={o.matched.tapAction} size="sm" />
                             </span>
                             <span>
-                              hold&nbsp;(≥{o.matched.tapTimeoutMs}&thinsp;ms): <KeyBadge combo={o.matched.holdAction} size="sm" />
+                              hold&nbsp;(≥{o.matched.tapTimeoutMs}&thinsp;ms): <ActionBadge action={o.matched.holdAction} size="sm" />
                             </span>
                           </span>
                         </>

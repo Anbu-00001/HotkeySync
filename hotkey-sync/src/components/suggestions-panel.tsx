@@ -8,6 +8,7 @@ import appsData from '@/data/apps.json';
 import type { App } from '@/types';
 import { Button } from '@/components/ui/button';
 import { KeyBadge } from '@/components/key-badge';
+import { ActionBadge } from '@/components/action-badge';
 import { cn } from '@/lib/utils';
 
 const APPS = appsData as App[];
@@ -112,13 +113,13 @@ export function SuggestionsPanel(): React.JSX.Element | null {
                 <KeyBadge combo={s.rule.trigger} size="sm" />
                 <span className="text-muted-foreground text-xs">→</span>
                 {s.rule.kind === 'basic' ? (
-                  <KeyBadge combo={s.rule.action} size="sm" />
+                  <ActionBadge action={s.rule.action} size="sm" />
                 ) : s.rule.kind === 'tap_hold' ? (
                   <span className="inline-flex items-center gap-1 text-[11px]">
                     <span className="text-muted-foreground">tap</span>
                     <KeyBadge combo={s.rule.tapAction} size="sm" />
                     <span className="text-muted-foreground">/ hold</span>
-                    <KeyBadge combo={s.rule.holdAction} size="sm" />
+                    <ActionBadge action={s.rule.holdAction} size="sm" />
                   </span>
                 ) : (
                   <span className="text-[11px] uppercase tracking-wide text-muted-foreground">

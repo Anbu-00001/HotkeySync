@@ -12,13 +12,14 @@
 
 import { z } from 'zod';
 import appsData from '@/data/apps.json';
-import type { App, HotkeyRule, OS } from '@/types';
+import type { Action, App, HotkeyRule, LayerHotkeyRule, ModifierAction, OS } from '@/types';
 import {
   TAP_HOLD_DEFAULT_TIMEOUT_MS,
   TAP_HOLD_MIN_TIMEOUT_MS,
   TAP_HOLD_MAX_TIMEOUT_MS,
   GLOBAL_APP_ID,
 } from '@/types';
+import { canonicaliseModifiers } from '@/lib/actions';
 import {
   serializeKeyCombo,
   KARABINER_KEY_MAP,
@@ -61,10 +62,34 @@ const KARABINER_TO_MODIFIER: Record<string, Modifier> = {
   right_command: 'meta',
 };
 
+/**
+ * Wave 2.6 — Karabiner key_codes that map directly to one of our Modifiers
+ * (no associated trigger key). Used to detect modifier-only `to` events for
+ * import as ModifierAction. The carrier-key trick (modifier as key_code +
+ * additional modifiers in `modifiers[]`) is handled by the caller.
+ */
+const KARABINER_KEYCODE_TO_MODIFIER: Record<string, Modifier> = {
+  left_control: 'ctrl',
+  right_control: 'ctrl',
+  left_shift: 'shift',
+  right_shift: 'shift',
+  left_option: 'alt',
+  right_option: 'alt',
+  left_command: 'meta',
+  right_command: 'meta',
+};
+
 // Lenient incoming schema: only the fields we actually consume; pass-through everything else.
 const incomingToEventSchema = z.object({
   key_code: z.string().optional(),
   modifiers: z.array(z.string()).optional(),
+  // Wave 2.6 — `lazy: true` round-trips for ModifierAction events.
+  lazy: z.boolean().optional(),
+  // Wave 2.7 — `set_variable` for layer activators (to[0]) and clears
+  // (to_after_key_up[0]). Variable name encodes layerName.
+  set_variable: z
+    .object({ name: z.string(), value: z.number().int() })
+    .optional(),
 });
 
 const incomingManipulatorSchema = z
@@ -85,10 +110,21 @@ const incomingManipulatorSchema = z
     to_if_alone: z.array(incomingToEventSchema).optional(),
     to_if_held_down: z.array(incomingToEventSchema).optional(),
     to_after_key_up: z.array(incomingToEventSchema).optional(),
+    // Wave 2.8 — one-shot layers use to_if_invoked to clear the variable on
+    // timeout. We tolerate to_if_canceled on import even though we don't emit it.
+    to_delayed_action: z
+      .object({
+        to_if_invoked: z.array(incomingToEventSchema).optional(),
+        to_if_canceled: z.array(incomingToEventSchema).optional(),
+      })
+      .passthrough()
+      .optional(),
     parameters: z
       .object({
         'basic.to_if_alone_timeout_milliseconds': z.number().optional(),
         'basic.to_if_held_down_threshold_milliseconds': z.number().optional(),
+        // Wave 2.8 — one-shot timeout in milliseconds.
+        'basic.to_delayed_action_delay_milliseconds': z.number().optional(),
       })
       .passthrough()
       .optional(),
@@ -97,6 +133,9 @@ const incomingManipulatorSchema = z
         z.object({
           type: z.string(),
           bundle_identifiers: z.array(z.string()).optional(),
+          // Wave 2.7 — `variable_if`: name + value identifying a layer gate.
+          name: z.string().optional(),
+          value: z.number().int().optional(),
         }),
       )
       .optional(),
@@ -118,6 +157,29 @@ export const karabinerImportSchema = z
   .passthrough();
 
 export type IncomingKarabinerBlob = z.infer<typeof karabinerImportSchema>;
+
+/**
+ * Wave 2.7 — strip the standard layer-variable prefix. Our generator emits
+ * `hotkeysync_layer_<name>` (underscores in `<name>` for dashed layerNames);
+ * we reverse the encoding here. Imports from other tools (Goku, karabiner.ts)
+ * use bare names without a prefix, which we accept verbatim if they still
+ * match the layerName regex.
+ */
+function unprefixLayerVarName(varName: string): string {
+  const PREFIX = 'hotkeysync_layer_';
+  const stripped = varName.startsWith(PREFIX) ? varName.slice(PREFIX.length) : varName;
+  return stripped.replace(/_/g, '-');
+}
+
+/**
+ * Wave 2.7 — mirrors the schema's layerName shape so we don't construct a
+ * rule that would fail validation later. Avoids needing to import the Zod
+ * schema here (which would create a runtime cycle with parser tests).
+ */
+function isValidLayerName(name: string): boolean {
+  if (name.length < 1 || name.length > 32) return false;
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(name);
+}
 
 function unescapeBundleRegex(pattern: string): string | null {
   // Accept '^com\.google\.Chrome$', 'com\.google\.Chrome', or plain 'com.google.Chrome'.
@@ -153,6 +215,38 @@ export interface KarabinerImportFailure {
 export type KarabinerImportOutcome =
   | { ok: true; result: KarabinerImportResult }
   | KarabinerImportFailure;
+
+/**
+ * Wave 2.6 — try to interpret a Karabiner `to` event as a ModifierAction.
+ * Returns null if the event is a regular key (caller should fall through to
+ * `buildCombo`). Handles:
+ *   - Pure single-modifier output: `{ key_code: 'left_control' }`
+ *   - Carrier-key bundle: `{ key_code: 'left_shift', modifiers: ['left_command', ...] }`
+ *     (every entry must be a modifier — if anything resolves to a real key,
+ *     it's NOT a ModifierAction)
+ *   - `lazy: true` propagated to the result.
+ */
+function tryBuildModifierAction(event: {
+  key_code?: string;
+  modifiers?: string[];
+  lazy?: boolean;
+}): ModifierAction | null {
+  if (!event.key_code) return null;
+  const carrier = KARABINER_KEYCODE_TO_MODIFIER[event.key_code];
+  if (!carrier) return null;
+  const mods: Modifier[] = [carrier];
+  for (const m of event.modifiers ?? []) {
+    const mapped = KARABINER_TO_MODIFIER[m];
+    if (!mapped) return null;
+    mods.push(mapped);
+  }
+  const out: ModifierAction = {
+    kind: 'modifier',
+    modifiers: canonicaliseModifiers(mods),
+  };
+  if (event.lazy) (out as { lazy?: boolean }).lazy = true;
+  return out;
+}
 
 function buildCombo(
   keyCode: string,
@@ -323,13 +417,111 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
           ? sourceDescription.slice(appName.length + 2)
           : sourceDescription;
 
-      // Warn-then-skip on Karabiner features we don't model yet.
+      // Wave 2.7 / 2.8 — detect a layer activator. Two shapes:
+      //   - Hold layer: `to[0].set_variable` set to 1 + matching
+      //     `to_after_key_up[0].set_variable` set to 0. Variable persists only
+      //     while the trigger is held.
+      //   - One-shot layer (Wave 2.8): `to[0].set_variable` set to 1, NO
+      //     `to_after_key_up`. Optional `to_delayed_action.to_if_invoked` with
+      //     a matching `set_variable: 0` event provides the timeout.
+      // In both, variable name is `hotkeysync_layer_<name>` (our convention);
+      // imports from other tools (karabiner.ts, Goku) work best-effort.
+      const layerOn = m.to?.[0]?.set_variable;
+      const layerOffHold = m.to_after_key_up?.[0]?.set_variable;
+      const layerOffDelayed = m.to_delayed_action?.to_if_invoked?.[0]?.set_variable;
+      const isHoldLayer =
+        !!layerOn &&
+        !!layerOffHold &&
+        layerOn.name === layerOffHold.name &&
+        layerOn.value !== 0 &&
+        layerOffHold.value === 0;
+      // One-shot: set_variable=1 on `to`, no `to_after_key_up`. The delayed
+      // action is optional — but if it exists it must clear the same variable.
+      const isOneShotLayer =
+        !!layerOn &&
+        !layerOffHold &&
+        layerOn.value !== 0 &&
+        (layerOffDelayed === undefined ||
+          (layerOffDelayed.name === layerOn.name && layerOffDelayed.value === 0));
+      if (layerOn && (isHoldLayer || isOneShotLayer)) {
+        const layerName = unprefixLayerVarName(layerOn.name);
+        if (!isValidLayerName(layerName)) {
+          warnings.push({
+            rulePath: path,
+            reason: `Could not extract a usable layerName from variable "${layerOn.name}"; layer skipped.`,
+          });
+          continue;
+        }
+        const mode: 'hold' | 'oneshot' = isHoldLayer ? 'hold' : 'oneshot';
+        // Optional dual-role tap action via `to_if_alone[0]` (hold layers only;
+        // schema rejects tapAction on oneshot mode).
+        let tapAction: Action | undefined;
+        if (mode === 'hold') {
+          const aloneEvt = m.to_if_alone?.[0];
+          if (aloneEvt?.key_code) {
+            const modAction = tryBuildModifierAction(aloneEvt);
+            if (modAction) {
+              tapAction = modAction;
+            } else {
+              const r = buildCombo(aloneEvt.key_code, aloneEvt.modifiers ?? []);
+              if (r.ok) tapAction = r.combo;
+            }
+          }
+        }
+        const layerRule: LayerHotkeyRule = {
+          kind: 'layer',
+          appId,
+          trigger: triggerResult.combo,
+          layerName,
+          mode,
+          description:
+            cleanedDescription.length > 0
+              ? cleanedDescription
+                  .replace(/\s*\(one-shot layer\)\s*$/, '')
+                  .replace(/\s*\(layer\)\s*$/, '')
+              : 'Imported layer',
+        };
+        if (tapAction !== undefined) layerRule.tapAction = tapAction;
+        if (m.to?.[0]?.lazy === false) layerRule.passthroughModifiers = false;
+        // Wave 2.8 — recover oneshotTimeoutMs from parameters when a delayed
+        // action is wired up to clear the variable.
+        if (mode === 'oneshot' && layerOffDelayed !== undefined) {
+          const delay = m.parameters?.['basic.to_delayed_action_delay_milliseconds'];
+          if (typeof delay === 'number' && delay >= 100 && delay <= 10_000) {
+            layerRule.oneshotTimeoutMs = delay;
+          }
+        }
+        rules.push(attachExcept(layerRule));
+        if (!seenApps.has(appId)) {
+          seenApps.add(appId);
+          selectedOrder.push(appId);
+        }
+        continue;
+      }
+
+      // Warn-then-skip when only one half of the layer activator pattern is
+      // present — likely hand-written rules we don't model. (A bare
+      // `to_after_key_up` clear is also non-emittable in our format.)
       if ((m.to_after_key_up?.length ?? 0) > 0) {
         warnings.push({
           rulePath: path,
           reason: '`to_after_key_up` is not supported yet — manipulator skipped.',
         });
         continue;
+      }
+
+      // Wave 2.7 — detect a layer child via `variable_if` condition. The
+      // matched variable name maps back to a layerName; the child is otherwise
+      // a normal basic rule that gains `layerName`.
+      const variableIfCond = conditions.find((c) => c.type === 'variable_if');
+      let childLayerName: string | undefined;
+      if (
+        variableIfCond &&
+        typeof variableIfCond.name === 'string' &&
+        variableIfCond.value !== 0
+      ) {
+        const candidate = unprefixLayerVarName(variableIfCond.name);
+        if (isValidLayerName(candidate)) childLayerName = candidate;
       }
 
       const hasTo = (m.to?.length ?? 0) > 0;
@@ -346,8 +538,8 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
 
       // Helper for tap_hold construction.
       const buildTapHold = (
-        tapEvt: { key_code?: string; modifiers?: string[] },
-        holdEvt: { key_code?: string; modifiers?: string[] } | null,
+        tapEvt: { key_code?: string; modifiers?: string[]; lazy?: boolean },
+        holdEvt: { key_code?: string; modifiers?: string[]; lazy?: boolean } | null,
         approxKind: 'clean' | 'alone-only' | 'dual-role',
       ) => {
         if (!tapEvt.key_code) {
@@ -359,18 +551,25 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
           warnings.push({ rulePath: path, reason: tapRes.reason });
           return null;
         }
-        let holdCombo: string;
+        let holdAction: Action;
         if (holdEvt && holdEvt.key_code) {
-          const r = buildCombo(holdEvt.key_code, holdEvt.modifiers ?? []);
-          if (!r.ok) {
-            warnings.push({ rulePath: path, reason: r.reason });
-            return null;
+          // Wave 2.6: prefer ModifierAction shape if every event component is
+          // a modifier (Caps Lock → LCtrl uses this).
+          const modAction = tryBuildModifierAction(holdEvt);
+          if (modAction) {
+            holdAction = modAction;
+          } else {
+            const r = buildCombo(holdEvt.key_code, holdEvt.modifiers ?? []);
+            if (!r.ok) {
+              warnings.push({ rulePath: path, reason: r.reason });
+              return null;
+            }
+            holdAction = r.combo;
           }
-          holdCombo = r.combo;
         } else {
           // Fall back to the trigger itself — classic dual-role pattern where
           // the key continues to act as itself while held.
-          holdCombo = triggerResult.combo;
+          holdAction = triggerResult.combo;
         }
         if (approxKind !== 'clean') {
           warnings.push({
@@ -400,7 +599,7 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
 
         return {
           tap: tapRes.combo,
-          hold: holdCombo,
+          hold: holdAction,
           timeoutMs: clamped,
         };
       };
@@ -481,6 +680,27 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
           warnings.push({ rulePath: path, reason: 'Skipped — missing or empty `to` array.' });
           continue;
         }
+        // Wave 2.6 — if every component of `to` is a modifier, import as a
+        // ModifierAction rather than failing on "Unknown key_code left_control".
+        const modAction = tryBuildModifierAction(first);
+        if (modAction) {
+          rules.push(attachExcept({
+            kind: 'basic',
+            appId,
+            trigger: triggerResult.combo,
+            action: modAction,
+            description:
+              cleanedDescription.length > 0
+                ? cleanedDescription
+                : 'Imported from Karabiner',
+            ...(childLayerName ? { layerName: childLayerName } : {}),
+          }));
+          if (!seenApps.has(appId)) {
+            seenApps.add(appId);
+            selectedOrder.push(appId);
+          }
+          continue;
+        }
         // vk_none / vk_consumer_play / vk_consumer_* with no modifiers is
         // Karabiner's convention for "swallow the keystroke" — import as a
         // disable rule. vk_none is what we emit; the broader vk_* family is
@@ -515,6 +735,7 @@ export function parseKarabinerJSON(source: string): KarabinerImportOutcome {
             cleanedDescription.length > 0
               ? cleanedDescription
               : 'Imported from Karabiner',
+          ...(childLayerName ? { layerName: childLayerName } : {}),
         }));
       } else {
         warnings.push({

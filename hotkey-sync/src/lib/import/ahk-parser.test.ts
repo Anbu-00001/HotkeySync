@@ -287,6 +287,77 @@ describe('AHK importer — defensive', () => {
   });
 });
 
+describe('AHK round-trip — ModifierAction (Wave 2.6)', () => {
+  it('round-trips a basic rule with single-modifier action (paired down/up)', () => {
+    const cfg: Config = {
+      os: 'windows',
+      rules: [
+        {
+          kind: 'basic',
+          appId: 'vs-code',
+          trigger: 'caps_lock',
+          action: { kind: 'modifier', modifiers: ['ctrl'] },
+          description: 'Caps as Ctrl',
+        },
+      ],
+    };
+    const ahk = generateAHK(cfg);
+    const out = parseAHK(ahk);
+    expect(out.rules).toHaveLength(1);
+    expect(out.rules[0]).toMatchObject({
+      kind: 'basic',
+      appId: 'vs-code',
+      trigger: 'caps_lock',
+      action: { kind: 'modifier', modifiers: ['ctrl'] },
+    });
+  });
+
+  it('round-trips a Hyper bundle (4 modifiers) preserving canonical order', () => {
+    const cfg: Config = {
+      os: 'windows',
+      rules: [
+        {
+          kind: 'basic',
+          appId: 'vs-code',
+          trigger: 'caps_lock',
+          action: { kind: 'modifier', modifiers: ['ctrl', 'shift', 'alt', 'meta'] },
+          description: 'Caps as Hyper',
+        },
+      ],
+    };
+    const ahk = generateAHK(cfg);
+    const out = parseAHK(ahk);
+    expect(out.rules).toHaveLength(1);
+    const action = out.rules[0].kind === 'basic' && typeof out.rules[0].action !== 'string'
+      ? out.rules[0].action
+      : null;
+    expect(action!.modifiers).toEqual(['ctrl', 'shift', 'alt', 'meta']);
+  });
+
+  it('round-trips a tap_hold with ModifierAction hold', () => {
+    const cfg: Config = {
+      os: 'windows',
+      rules: [
+        {
+          kind: 'tap_hold',
+          appId: 'vs-code',
+          trigger: 'caps_lock',
+          tapAction: 'escape',
+          holdAction: { kind: 'modifier', modifiers: ['ctrl'] },
+          tapTimeoutMs: 200,
+          description: 'Caps tap=Esc / hold=Ctrl',
+        },
+      ],
+    };
+    const ahk = generateAHK(cfg);
+    const out = parseAHK(ahk);
+    expect(out.rules[0]).toMatchObject({
+      kind: 'tap_hold',
+      holdAction: { kind: 'modifier', modifiers: ['ctrl'] },
+    });
+  });
+});
+
 describe('AHK round-trip — disable kind', () => {
   it('round-trips a HotkeySync-emitted Trigger:: return line', () => {
     const src = [
@@ -319,5 +390,108 @@ describe('AHK round-trip — disable kind', () => {
       appId: '__global',
       trigger: 'ctrl+q',
     });
+  });
+});
+
+describe('AHK Wave 2.7 — layer rules', () => {
+  it('parses a layer activator + child block back into LayerHotkeyRule + basic with layerName', async () => {
+    const src = `
+#Requires AutoHotkey v2.0+
+#SingleInstance Force
+global g_LayerVimArrows := false
+
+SetTimer(HotkeySync_LayerWatchdog, 1000)
+HotkeySync_LayerWatchdog() {
+  global g_LayerVimArrows
+  if (g_LayerVimArrows && !GetKeyState("CapsLock", "P"))
+    g_LayerVimArrows := false
+}
+
+*CapsLock:: { global g_LayerVimArrows := true }  ; Caps layer
+*CapsLock up:: { global g_LayerVimArrows := false }  ; layer off
+
+#HotIf g_LayerVimArrows
+h:: Send("{Left}")  ; Caps+H → Left
+j:: Send("{Down}")  ; Caps+J → Down
+#HotIf
+`.trim();
+    const out = parseAHK(src);
+    const layers = out.rules.filter((r) => r.kind === 'layer');
+    const childen = out.rules.filter(
+      (r) => r.kind === 'basic' && r.layerName === 'vim-arrows',
+    );
+    expect(layers).toHaveLength(1);
+    expect(layers[0]).toMatchObject({
+      kind: 'layer',
+      layerName: 'vim-arrows',
+      trigger: 'caps_lock',
+    });
+    expect(childen).toHaveLength(2);
+  });
+
+  it('full round-trip: vim-arrows preset → AHK → parse retains layer + children', async () => {
+    const { PRESETS } = await import('@/data/presets');
+    const preset = PRESETS.find((p) => p.id === 'caps-lock-vim-arrows');
+    expect(preset).toBeDefined();
+    if (!preset) return;
+    const cfg: Config = { os: 'windows', rules: preset.rules };
+    const ahk = generateAHK(cfg);
+    const out = parseAHK(ahk);
+    const layerCount = out.rules.filter((r) => r.kind === 'layer').length;
+    const childCount = out.rules.filter(
+      (r) => r.kind === 'basic' && r.layerName === 'vim-arrows',
+    ).length;
+    expect(layerCount).toBe(1);
+    expect(childCount).toBe(4);
+  });
+});
+
+describe('AHK Wave 2.8 — one-shot layer round-trip', () => {
+  it('parses an emitted one-shot activator + child handlers', () => {
+    const src = `
+#Requires AutoHotkey v2.0+
+#SingleInstance Force
+global g_LayerOsVim := false
+
+*CapsLock:: { global g_LayerOsVim := true ; SetTimer(() => HotkeySync_OneShotExpire_OsVim(), -2000) }  ; one-shot (one-shot on)
+HotkeySync_OneShotExpire_OsVim() {
+  global g_LayerOsVim
+  g_LayerOsVim := false
+}
+
+#HotIf g_LayerOsVim
+h:: { Send("{Left}") ; global g_LayerOsVim := false }  ; H to Left
+j:: { Send("{Down}") ; global g_LayerOsVim := false }  ; J to Down
+Escape:: { global g_LayerOsVim := false }  ; cancel one-shot layer
+#HotIf
+`.trim();
+    const out = parseAHK(src);
+    const layer = out.rules.find((r) => r.kind === 'layer');
+    expect(layer).toBeDefined();
+    if (!layer || layer.kind !== 'layer') return;
+    expect(layer.mode).toBe('oneshot');
+    expect(layer.oneshotTimeoutMs).toBe(2000);
+    const children = out.rules.filter(
+      (r) => r.kind === 'basic' && r.layerName === 'os-vim',
+    );
+    expect(children).toHaveLength(2);
+  });
+
+  it('full round-trip: one-shot preset → AHK → parse preserves mode + children', async () => {
+    const { PRESETS } = await import('@/data/presets');
+    const preset = PRESETS.find((p) => p.id === 'caps-lock-vim-arrows-oneshot');
+    expect(preset).toBeDefined();
+    if (!preset) return;
+    const cfg: Config = { os: 'windows', rules: preset.rules };
+    const ahk = generateAHK(cfg);
+    const out = parseAHK(ahk);
+    const layer = out.rules.find((r) => r.kind === 'layer');
+    expect(layer).toBeDefined();
+    if (!layer || layer.kind !== 'layer') return;
+    expect(layer.mode).toBe('oneshot');
+    const childCount = out.rules.filter(
+      (r) => r.kind === 'basic' && r.layerName === 'vim-arrows-os',
+    ).length;
+    expect(childCount).toBe(4);
   });
 });

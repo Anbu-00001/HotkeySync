@@ -8,6 +8,7 @@ import {
   summariseCrossAppUsage,
 } from '@/lib/cross-app-conflicts';
 import { KeyBadge } from '@/components/key-badge';
+import { ActionBadge } from '@/components/action-badge';
 import appsData from '@/data/apps.json';
 import type { App } from '@/types';
 import { cn } from '@/lib/utils';
@@ -130,13 +131,13 @@ export function ConflictMatrixPanel(): React.JSX.Element {
                       </span>
                       <span className="text-muted-foreground">→</span>
                       {usage.kind === 'basic' ? (
-                        <KeyBadge combo={usage.action} size="sm" />
+                        <ActionBadge action={usage.action} size="sm" />
                       ) : usage.kind === 'tap_hold' ? (
                         <span className="inline-flex items-center gap-1 text-[11px]">
                           <span className="text-muted-foreground">tap</span>
                           <KeyBadge combo={usage.tapAction} size="sm" />
                           <span className="text-muted-foreground">/ hold</span>
-                          <KeyBadge combo={usage.holdAction} size="sm" />
+                          <ActionBadge action={usage.holdAction} size="sm" />
                           <span className="text-muted-foreground">
                             @ {usage.tapTimeoutMs}&thinsp;ms
                           </span>

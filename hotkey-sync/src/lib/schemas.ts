@@ -1,10 +1,40 @@
 import { z } from 'zod';
-import { parseKeyCombo } from '@/lib/keys';
+import { parseKeyCombo, MODIFIERS } from '@/lib/keys';
 import {
   TAP_HOLD_MIN_TIMEOUT_MS,
   TAP_HOLD_MAX_TIMEOUT_MS,
   GLOBAL_APP_ID,
 } from '@/types';
+
+/**
+ * Wave 2.6 ModifierAction schema. `lazy` is gated on `kind: 'modifier'` at the
+ * type level (it's a literal field on the variant), so we don't need a custom
+ * refinement for it.
+ */
+const modifierActionSchema = z.object({
+  kind: z.literal('modifier'),
+  modifiers: z.array(z.enum(MODIFIERS)).min(1).max(4),
+  lazy: z.boolean().optional(),
+});
+
+/**
+ * Action: either a canonical key combo string (legacy form, pre-Wave-2.6) or
+ * a typed ModifierAction object. The string form covers ~all existing rules
+ * — see `Action` type docs for the migration rationale.
+ */
+const actionSchema = z.union([keyComboSchemaPlaceholder(), modifierActionSchema]);
+// Forward-declare to avoid the chicken-and-egg between keyComboSchema and
+// actionSchema. `keyComboSchema` is exported below.
+function keyComboSchemaPlaceholder(): z.ZodType<string> {
+  return z.string().superRefine((val, ctx) => {
+    try {
+      parseKeyCombo(val);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Invalid key combo';
+      ctx.addIssue({ code: 'custom', message });
+    }
+  });
+}
 
 /**
  * Optional `exceptApps` list. Allowed shape on every rule kind, but only
@@ -25,13 +55,28 @@ export const keyComboSchema = z.string().superRefine((val, ctx) => {
   }
 });
 
+/**
+ * Layer name shape. Lowercase-dash-case, 1–32 chars. Tight on purpose: the
+ * name surfaces in generator output (`g_LayerVimArrows`, Karabiner variable
+ * names) so we want a strict id-like shape, not free text.
+ */
+const layerNameSchema = z
+  .string()
+  .min(1)
+  .max(32)
+  .regex(
+    /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/,
+    'layerName must be lowercase-dash-case',
+  );
+
 export const basicRuleSchema = z
   .object({
     kind: z.literal('basic'),
     appId: z.string().min(1),
     trigger: keyComboSchema,
-    action: keyComboSchema,
+    action: actionSchema,
     description: z.string().min(1).max(120),
+    layerName: layerNameSchema.optional(),
     exceptApps: exceptAppsSchema,
   })
   .superRefine(refineExceptApps);
@@ -42,7 +87,7 @@ export const tapHoldRuleSchema = z
     appId: z.string().min(1),
     trigger: keyComboSchema,
     tapAction: keyComboSchema,
-    holdAction: keyComboSchema,
+    holdAction: actionSchema,
     tapTimeoutMs: z
       .number()
       .int()
@@ -81,13 +126,101 @@ function refineExceptApps(
   }
 }
 
+/**
+ * Wave 2.7 — layer rule. Defines a trigger that activates a named layer for
+ * the duration of the hold. Children (basic rules with `layerName` matching)
+ * fire only while the layer is active.
+ *
+ * `mode` is on the schema for forward-compat with Wave 2.8 one-shot, but
+ * currently only 'hold' is accepted — anything else is rejected at parse time.
+ */
+export const layerRuleSchema = z
+  .object({
+    kind: z.literal('layer'),
+    appId: z.string().min(1),
+    trigger: keyComboSchema,
+    layerName: layerNameSchema,
+    mode: z.enum(['hold', 'oneshot']),
+    tapAction: actionSchema.optional(),
+    passthroughModifiers: z.boolean().optional(),
+    unmappedBehavior: z.enum(['swallow', 'passthrough']).optional(),
+    // Wave 2.8 — one-shot tuning knobs. All ignored when mode === 'hold'.
+    oneshotTimeoutMs: z.number().int().min(100).max(10_000).optional(),
+    cancelKeys: z.array(keyComboSchema).max(8).optional(),
+    description: z.string().min(1).max(120),
+    exceptApps: exceptAppsSchema,
+  })
+  .superRefine(refineExceptApps)
+  .superRefine((data, ctx) => {
+    // Wave 2.8 cross-field invariants. One-shot can't carry a tapAction (the
+    // tap IS the activation), and hold rules ignore one-shot tuning fields —
+    // reject them at the schema layer so the generator never has to defend
+    // against impossible states.
+    if (data.mode === 'oneshot' && data.tapAction !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['tapAction'],
+        message: 'oneshot mode does not support tapAction (the tap IS the activation).',
+      });
+    }
+    if (data.mode === 'hold') {
+      for (const k of ['oneshotTimeoutMs', 'cancelKeys'] as const) {
+        if (data[k] !== undefined) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [k],
+            message: `${k} is only meaningful when mode === 'oneshot'.`,
+          });
+        }
+      }
+    }
+  });
+
 export const hotkeyRuleSchema = z.discriminatedUnion('kind', [
   basicRuleSchema,
   tapHoldRuleSchema,
   disableRuleSchema,
+  layerRuleSchema,
 ]);
 
 export type ValidatedHotkeyRule = z.infer<typeof hotkeyRuleSchema>;
+
+/**
+ * Config-level validation: every basic-rule `layerName` reference must
+ * resolve to a `LayerHotkeyRule` whose `layerName` matches. Orphan references
+ * are almost always a typo or an out-of-order import, so we reject them at
+ * parse time rather than letting the generator silently emit a dead rule.
+ *
+ * Also enforces layerName uniqueness — defining two layers with the same
+ * name would make children ambiguous.
+ */
+export const rulesArraySchema = z
+  .array(hotkeyRuleSchema)
+  .superRefine((rules, ctx) => {
+    const layerNames = new Set<string>();
+    const duplicates = new Set<string>();
+    for (const r of rules) {
+      if (r.kind === 'layer') {
+        if (layerNames.has(r.layerName)) duplicates.add(r.layerName);
+        layerNames.add(r.layerName);
+      }
+    }
+    for (const name of duplicates) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Duplicate layer definition: "${name}". Each layerName must be unique.`,
+      });
+    }
+    rules.forEach((r, i) => {
+      if (r.kind === 'basic' && r.layerName && !layerNames.has(r.layerName)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [i, 'layerName'],
+          message: `Rule references layer "${r.layerName}" but no LayerHotkeyRule with that name exists.`,
+        });
+      }
+    });
+  });
 
 /**
  * Schema for an App entry in `src/data/apps.json`. Enforces the backbone

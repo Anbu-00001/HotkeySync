@@ -1,11 +1,13 @@
 'use client';
 
 import * as React from 'react';
-import { Trash2, AlertTriangle, ArrowRight, Zap, Ban, Globe, ShieldAlert } from 'lucide-react';
+import { Trash2, AlertTriangle, ArrowRight, Zap, Ban, Globe, ShieldAlert, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KeyCaptureInput } from '@/components/key-capture-input';
+import { ActionBadge } from '@/components/action-badge';
 import { Badge } from '@/components/ui/badge';
+import { isModifierAction } from '@/lib/actions';
 import type { HotkeyRule } from '@/types';
 import {
   TAP_HOLD_MIN_TIMEOUT_MS,
@@ -32,6 +34,7 @@ export function RuleRow({
 
   const isTapHold = rule.kind === 'tap_hold';
   const isDisable = rule.kind === 'disable';
+  const isLayer = rule.kind === 'layer';
   const isGlobal = rule.appId === '__global';
   const exceptCount = isGlobal ? rule.exceptApps?.length ?? 0 : 0;
 
@@ -69,6 +72,17 @@ export function RuleRow({
                 Disabled
               </Badge>
             )}
+            {isLayer && (
+              <Badge
+                variant="outline"
+                className="text-[10px] gap-1"
+                data-testid="layer-rule-badge"
+                title="Activates a layer while held — child rules with the matching layerName fire only during the hold."
+              >
+                <Layers className="h-2.5 w-2.5" />
+                Layer
+              </Badge>
+            )}
             {isGlobal && (
               <Badge
                 variant="outline"
@@ -98,17 +112,70 @@ export function RuleRow({
           aria-hidden="true"
         />
         {rule.kind === 'basic' ? (
-          <KeyCaptureInput
-            value={rule.action}
-            onChange={(v) => onUpdate({ action: v })}
-            onValidationError={setActionError}
-            placeholder="Capture action"
-            aria-label="Action key"
-          />
+          isModifierAction(rule.action) ? (
+            // ModifierAction is read-only in the editor today — users add it
+            // via preset/suggestion, then delete-and-recreate to change. The
+            // key-capture surface only captures key combos, not modifier bundles.
+            <div className="flex items-center gap-2 mt-2" data-testid="modifier-action-readonly">
+              <ActionBadge action={rule.action} size="md" />
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                (read-only)
+              </span>
+            </div>
+          ) : (
+            <KeyCaptureInput
+              value={rule.action}
+              onChange={(v) => onUpdate({ action: v })}
+              onValidationError={setActionError}
+              placeholder="Capture action"
+              aria-label="Action key"
+            />
+          )
         ) : rule.kind === 'disable' ? (
           <span className="text-xs text-muted-foreground italic mt-2">
             key is swallowed — does nothing in this app
           </span>
+        ) : rule.kind === 'layer' ? (
+          // Wave 2.7 / 2.8 — layer rules are read-only in the rule-row today;
+          // edit by deleting and re-adding from a preset. Child basic rules
+          // with matching layerName fire only while the layer is active.
+          <div
+            className="flex items-center gap-2 mt-2 flex-wrap"
+            data-testid="layer-rule-readonly"
+          >
+            <span className="font-mono text-xs">layer “{rule.layerName}”</span>
+            <Badge
+              variant="secondary"
+              className="text-[10px]"
+              data-testid="layer-mode-badge"
+              title={
+                rule.mode === 'oneshot'
+                  ? 'Tap arms the layer; the next child key fires through it and disarms.'
+                  : 'Layer is active while the trigger is physically held.'
+              }
+            >
+              {rule.mode === 'oneshot' ? 'One-Shot' : 'Hold'}
+            </Badge>
+            {rule.mode === 'oneshot' && rule.oneshotTimeoutMs !== undefined && (
+              <span
+                className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                data-testid="oneshot-timeout-chip"
+              >
+                {rule.oneshotTimeoutMs}&thinsp;ms timeout
+              </span>
+            )}
+            {rule.tapAction !== undefined && (
+              <>
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  tap →
+                </span>
+                <ActionBadge action={rule.tapAction} size="md" />
+              </>
+            )}
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              (read-only)
+            </span>
+          </div>
         ) : (
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
@@ -127,13 +194,22 @@ export function RuleRow({
               <span className="text-[10px] uppercase tracking-wide text-muted-foreground w-12">
                 Hold
               </span>
-              <KeyCaptureInput
-                value={rule.holdAction}
-                onChange={(v) => onUpdate({ holdAction: v })}
-                onValidationError={setActionError}
-                placeholder="Hold action"
-                aria-label="Hold action key"
-              />
+              {isModifierAction(rule.holdAction) ? (
+                <div className="flex items-center gap-2" data-testid="modifier-hold-readonly">
+                  <ActionBadge action={rule.holdAction} size="md" />
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    (read-only)
+                  </span>
+                </div>
+              ) : (
+                <KeyCaptureInput
+                  value={rule.holdAction}
+                  onChange={(v) => onUpdate({ holdAction: v })}
+                  onValidationError={setActionError}
+                  placeholder="Hold action"
+                  aria-label="Hold action key"
+                />
+              )}
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] uppercase tracking-wide text-muted-foreground w-12">

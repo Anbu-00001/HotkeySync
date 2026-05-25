@@ -70,7 +70,7 @@ describe('generateKarabiner — single rule', () => {
 
   it('emits an anchored, dot-escaped bundle identifier', () => {
     expect(
-      out.rules[0].manipulators[0].conditions[0].bundle_identifiers[0],
+      out.rules[0].manipulators[0].conditions[0].bundle_identifiers![0],
     ).toBe('^com\\.google\\.Chrome$');
   });
 });
@@ -129,7 +129,7 @@ describe('generateKarabiner — bundle identifier regex', () => {
       makeConfig([rule('slack', 'ctrl+p', 'ctrl+comma')]),
     );
     expect(
-      out.rules[0].manipulators[0].conditions[0].bundle_identifiers[0],
+      out.rules[0].manipulators[0].conditions[0].bundle_identifiers![0],
     ).toBe('^com\\.tinyspeck\\.slackmacgap$');
   });
 
@@ -138,7 +138,7 @@ describe('generateKarabiner — bundle identifier regex', () => {
       makeConfig([rule('obsidian', 'ctrl+p', 'ctrl+comma')]),
     );
     expect(
-      out.rules[0].manipulators[0].conditions[0].bundle_identifiers[0],
+      out.rules[0].manipulators[0].conditions[0].bundle_identifiers![0],
     ).toBe('^md\\.obsidian$');
   });
 
@@ -147,7 +147,7 @@ describe('generateKarabiner — bundle identifier regex', () => {
       makeConfig([rule('notion', 'ctrl+p', 'ctrl+comma')]),
     );
     expect(
-      out.rules[0].manipulators[0].conditions[0].bundle_identifiers[0],
+      out.rules[0].manipulators[0].conditions[0].bundle_identifiers![0],
     ).toBe('^notion\\.id$');
   });
 });
@@ -269,7 +269,7 @@ describe('generateKarabiner — tap_hold rules', () => {
     );
     const m = out.rules[0].manipulators[0];
     expect(m.conditions[0].type).toBe('frontmost_application_if');
-    expect(m.conditions[0].bundle_identifiers[0]).toBe('^com\\.microsoft\\.VSCode$');
+    expect(m.conditions[0].bundle_identifiers![0]).toBe('^com\\.microsoft\\.VSCode$');
   });
 
   it('description includes app name prefix like basic rules', () => {
@@ -317,6 +317,66 @@ describe('generateKarabiner — unknown appId', () => {
       makeConfig([rule('nonexistent-app', 'ctrl+p', 'ctrl+comma')]),
     );
     expect(out.rules).toEqual([]);
+  });
+});
+
+describe('generateKarabiner — modifier actions (Wave 2.6)', () => {
+  it('basic rule with single-modifier action emits { key_code: <modifier> }', () => {
+    const out = generateKarabiner(
+      makeConfig([
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'caps_lock',
+          action: { kind: 'modifier', modifiers: ['ctrl'] },
+          description: 'Caps as Ctrl',
+        },
+      ]),
+    );
+    const to = out.rules[0].manipulators[0].to;
+    expect(to).toEqual([{ key_code: 'left_control' }]);
+  });
+
+  it('Hyper bundle uses the carrier-key trick (shift carrier + other 3 modifiers)', () => {
+    const out = generateKarabiner(
+      makeConfig([
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'caps_lock',
+          action: {
+            kind: 'modifier',
+            modifiers: ['ctrl', 'shift', 'alt', 'meta'],
+            lazy: true,
+          },
+          description: 'Caps as Hyper',
+        },
+      ]),
+    );
+    const event = out.rules[0].manipulators[0].to![0];
+    expect(event.key_code).toBe('left_shift');
+    expect(new Set(event.modifiers)).toEqual(
+      new Set(['left_command', 'left_control', 'left_option']),
+    );
+    expect(event.lazy).toBe(true);
+  });
+
+  it('tap_hold with ModifierAction holdAction emits to_if_held_down with the modifier', () => {
+    const out = generateKarabiner(
+      makeConfig([
+        {
+          kind: 'tap_hold',
+          appId: '__global',
+          trigger: 'caps_lock',
+          tapAction: 'escape',
+          holdAction: { kind: 'modifier', modifiers: ['ctrl'], lazy: true },
+          tapTimeoutMs: 200,
+          description: 'Caps tap=Esc / hold=Ctrl',
+        },
+      ]),
+    );
+    const heldDown = out.rules[0].manipulators[0].to_if_held_down![0];
+    expect(heldDown).toEqual({ key_code: 'left_control', lazy: true });
   });
 });
 
@@ -389,6 +449,225 @@ describe('generateKarabiner — disable rule', () => {
   it('still scopes to the app via frontmost_application_if', () => {
     const conds = out.rules[0].manipulators[0].conditions;
     expect(conds[0].type).toBe('frontmost_application_if');
-    expect(conds[0].bundle_identifiers[0]).toMatch(/firefox/i);
+    expect(conds[0].bundle_identifiers![0]).toMatch(/firefox/i);
+  });
+});
+
+describe('generateKarabiner — layer rules (Wave 2.7)', () => {
+  it('emits set_variable on `to` and `to_after_key_up` for the layer trigger', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim-arrows',
+          mode: 'hold',
+          description: 'Caps layer',
+        },
+      ],
+    });
+    const m = out.rules[0].manipulators[0];
+    expect(m.to?.[0].set_variable).toEqual({
+      name: 'hotkeysync_layer_vim_arrows',
+      value: 1,
+    });
+    expect(m.to?.[0].lazy).toBe(true);
+    expect(m.to_after_key_up?.[0].set_variable).toEqual({
+      name: 'hotkeysync_layer_vim_arrows',
+      value: 0,
+    });
+  });
+
+  it('emits `variable_if` on child basic rules referencing the layer', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim-arrows',
+          mode: 'hold',
+          description: 'Caps layer',
+        },
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'h',
+          action: 'left_arrow',
+          layerName: 'vim-arrows',
+          description: 'Caps+H → Left',
+        },
+      ],
+    });
+    // The child rule's manipulator conditions include a variable_if matching
+    // the layer variable name.
+    const child = out.rules.find((r) => r.description.endsWith('Caps+H → Left'));
+    expect(child).toBeDefined();
+    const varCond = child!.manipulators[0].conditions.find(
+      (c) => c.type === 'variable_if',
+    );
+    expect(varCond?.name).toBe('hotkeysync_layer_vim_arrows');
+    expect(varCond?.value).toBe(1);
+  });
+
+  it('omits `variable_if` on basic rules without a layerName', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'basic',
+          appId: 'google-chrome',
+          trigger: 'ctrl+p',
+          action: 'ctrl+comma',
+          description: 'Prefs',
+        },
+      ],
+    });
+    const conds = out.rules[0].manipulators[0].conditions;
+    expect(conds.some((c) => c.type === 'variable_if')).toBe(false);
+  });
+
+  it('attaches tapAction via `to_if_alone` for dual-role layer triggers', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim-arrows',
+          mode: 'hold',
+          tapAction: 'escape',
+          description: 'Caps layer tap=esc',
+        },
+      ],
+    });
+    const m = out.rules[0].manipulators[0];
+    expect(m.to_if_alone?.[0].key_code).toBe('escape');
+  });
+});
+
+describe('generateKarabiner — one-shot layer (Wave 2.8)', () => {
+  it('emits set_variable=1 on `to` and omits to_after_key_up for one-shot trigger', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'os-vim',
+          mode: 'oneshot',
+          description: 'one-shot vim arm',
+        },
+      ],
+    });
+    const m = out.rules[0].manipulators[0];
+    expect(m.to?.[0].set_variable).toEqual({
+      name: 'hotkeysync_layer_os_vim',
+      value: 1,
+    });
+    expect(m.to_after_key_up).toBeUndefined();
+  });
+
+  it('child basic rule of a one-shot layer appends set_variable=0 to its `to` array', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'os-vim',
+          mode: 'oneshot',
+          description: 'one-shot vim arm',
+        },
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'h',
+          action: 'left_arrow',
+          layerName: 'os-vim',
+          description: 'tap then H',
+        },
+      ],
+    });
+    const child = out.rules.find((r) => r.description.endsWith('tap then H'));
+    expect(child).toBeDefined();
+    const childTo = child!.manipulators[0].to;
+    expect(childTo).toHaveLength(2);
+    expect(childTo?.[0].key_code).toBe('left_arrow');
+    expect(childTo?.[1].set_variable).toEqual({
+      name: 'hotkeysync_layer_os_vim',
+      value: 0,
+    });
+  });
+
+  it('emits to_delayed_action.to_if_invoked when oneshotTimeoutMs is set', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'os-vim',
+          mode: 'oneshot',
+          oneshotTimeoutMs: 1500,
+          description: 'one-shot with timeout',
+        },
+      ],
+    });
+    const m = out.rules[0].manipulators[0];
+    expect(m.to_delayed_action?.to_if_invoked?.[0].set_variable).toEqual({
+      name: 'hotkeysync_layer_os_vim',
+      value: 0,
+    });
+    expect(m.parameters?.['basic.to_delayed_action_delay_milliseconds']).toBe(1500);
+  });
+
+  it('emits cancel-key manipulators when cancelKeys is non-empty', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'os-vim',
+          mode: 'oneshot',
+          cancelKeys: ['escape', 'meta+period'],
+          description: 'one-shot with cancel keys',
+        },
+      ],
+    });
+    const cancelEscape = out.rules.find((r) =>
+      r.description.includes('cancel escape'),
+    );
+    expect(cancelEscape).toBeDefined();
+    const cancelMeta = out.rules.find((r) =>
+      r.description.includes('cancel meta+period'),
+    );
+    expect(cancelMeta).toBeDefined();
+  });
+
+  it('does NOT emit cancel manipulators on hold-mode layers', () => {
+    const out = generateKarabiner({
+      os: 'mac',
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'os-vim',
+          mode: 'hold',
+          description: 'hold layer',
+        },
+      ],
+    });
+    expect(out.rules.find((r) => r.description.includes('cancel'))).toBeUndefined();
   });
 });

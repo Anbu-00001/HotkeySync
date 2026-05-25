@@ -297,3 +297,108 @@ describe('Share URL — disable kind (v3)', () => {
     expect(decoded.config).toEqual(state);
   });
 });
+
+describe('Share URL — Wave 2.7 layer rules (v5)', () => {
+  it('round-trips a layer rule + child basic rule', () => {
+    const state: ConfigState = {
+      os: 'mac',
+      selectedAppIds: ['__global'],
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim-arrows',
+          mode: 'hold',
+          description: 'Caps Lock vim layer',
+        },
+        {
+          kind: 'basic',
+          appId: '__global',
+          trigger: 'h',
+          action: 'left_arrow',
+          layerName: 'vim-arrows',
+          description: 'Caps+H → Left',
+        },
+      ],
+    };
+    const encoded = encodeConfig(state);
+    const decoded = decodeConfig(encoded);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.config).toEqual(state);
+  });
+
+  it('round-trips layer.tapAction + passthroughModifiers + unmappedBehavior', () => {
+    const state: ConfigState = {
+      os: 'mac',
+      selectedAppIds: ['__global'],
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'hyper',
+          mode: 'hold',
+          tapAction: 'escape',
+          passthroughModifiers: false,
+          unmappedBehavior: 'passthrough',
+          description: 'tap=Esc, hold=hyper, passthrough unmapped',
+        },
+      ],
+    };
+    const encoded = encodeConfig(state);
+    const decoded = decodeConfig(encoded);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.config).toEqual(state);
+  });
+});
+
+describe('Share URL — Wave 2.8 one-shot layer (v6)', () => {
+  it('round-trips a one-shot layer with timeout + cancelKeys', () => {
+    const state: ConfigState = {
+      os: 'mac',
+      selectedAppIds: ['__global'],
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'os-vim',
+          mode: 'oneshot',
+          oneshotTimeoutMs: 2000,
+          cancelKeys: ['escape', 'meta+period'],
+          description: 'one-shot vim with cancel',
+        },
+      ],
+    };
+    const encoded = encodeConfig(state);
+    const decoded = decodeConfig(encoded);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.config).toEqual(state);
+  });
+
+  it('hold-mode layers decode unchanged (md field omitted on encode)', () => {
+    const state: ConfigState = {
+      os: 'mac',
+      selectedAppIds: ['__global'],
+      rules: [
+        {
+          kind: 'layer',
+          appId: '__global',
+          trigger: 'caps_lock',
+          layerName: 'vim',
+          mode: 'hold',
+          description: 'hold vim',
+        },
+      ],
+    };
+    const encoded = encodeConfig(state);
+    const decoded = decodeConfig(encoded);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.config).toEqual(state);
+  });
+});

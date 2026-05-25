@@ -104,7 +104,10 @@ describe('Karabiner schema — rejection cases', () => {
     expect(validateKarabinerOutput(bad).ok).toBe(false);
   });
 
-  it('rejects condition type other than frontmost_application_if', () => {
+  it('rejects condition type not in the accepted union', () => {
+    // Wave 2.7 — `variable_if` is now accepted alongside frontmost_application_*.
+    // This case uses an entirely unknown discriminator to keep the rejection
+    // assertion meaningful.
     const bad = {
       title: 'x',
       rules: [
@@ -115,13 +118,33 @@ describe('Karabiner schema — rejection cases', () => {
               type: 'basic',
               from: { key_code: 'p' },
               to: [{ key_code: 'q' }],
-              conditions: [{ type: 'variable_if', name: 'foo', value: 1 }],
+              conditions: [{ type: 'something_else', bundle_identifiers: ['^x$'] }],
             },
           ],
         },
       ],
     };
     expect(validateKarabinerOutput(bad).ok).toBe(false);
+  });
+
+  it('accepts `variable_if` conditions with name + value (Wave 2.7 layer gate)', () => {
+    const good = {
+      title: 'x',
+      rules: [
+        {
+          description: 'd',
+          manipulators: [
+            {
+              type: 'basic',
+              from: { key_code: 'p' },
+              to: [{ key_code: 'q' }],
+              conditions: [{ type: 'variable_if', name: 'hotkeysync_layer_x', value: 1 }],
+            },
+          ],
+        },
+      ],
+    };
+    expect(validateKarabinerOutput(good).ok).toBe(true);
   });
 
   it('rejects empty bundle_identifiers array', () => {

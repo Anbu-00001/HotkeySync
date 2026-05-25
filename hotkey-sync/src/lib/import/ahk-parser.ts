@@ -18,7 +18,7 @@
  */
 
 import appsData from '@/data/apps.json';
-import type { App, HotkeyRule, OS } from '@/types';
+import type { App, HotkeyRule, LayerHotkeyRule, ModifierAction, OS } from '@/types';
 import {
   TAP_HOLD_DEFAULT_TIMEOUT_MS,
   TAP_HOLD_MIN_TIMEOUT_MS,
@@ -30,6 +30,7 @@ import {
   type Modifier,
   type TriggerKey,
 } from '@/lib/keys';
+import { canonicaliseModifiers } from '@/lib/actions';
 
 const APPS = appsData as App[];
 
@@ -166,8 +167,110 @@ export interface AHKImportResult {
   os: OS;
 }
 
+/**
+ * Wave 2.6 — matches a HotkeySync-emitted modifier-action down line:
+ *   `*^q::Send("{Blind}{LControl down}{LShift down}")  ; Caps to Hyper`
+ * Captures the trigger expression (with the `*` prefix already consumed),
+ * the modifier-down sequence inside the Send call, and the description.
+ *
+ * The matching `*<trigger> up::` line is informational; we ignore it on
+ * import since the down line fully describes the rule.
+ */
+const MODIFIER_DOWN_RULE_RX =
+  /^\*(\S+?)::\s*Send\(\s*["']\{Blind\}((?:\{[A-Za-z]+ down\})+)["']\s*\)\s*(?:;(.*))?$/;
+/** Matches the up partner emitted by our generator — discarded on import. */
+const MODIFIER_UP_RULE_RX =
+  /^\*(\S+?)\s+up::\s*Send\(\s*["']\{Blind\}((?:\{[A-Za-z]+ up\})+)["']\s*\)\s*(?:;.*)?$/;
+
+// AHK VK names (LControl, LShift, LAlt, LWin, plus right variants users may
+// hand-write) → HotkeySync Modifier.
+const AHK_VK_TO_MODIFIER: Record<string, Modifier> = {
+  lcontrol: 'ctrl',
+  rcontrol: 'ctrl',
+  ctrl: 'ctrl',
+  lshift: 'shift',
+  rshift: 'shift',
+  shift: 'shift',
+  lalt: 'alt',
+  ralt: 'alt',
+  alt: 'alt',
+  lwin: 'meta',
+  rwin: 'meta',
+  win: 'meta',
+};
+
+/**
+ * Extract `{LControl down}{LShift down}...` from the inner Send string into a
+ * sorted, deduped ModifierAction. Returns null if any segment is not a
+ * recognised modifier (lets the caller fall through to other parsers).
+ */
+/**
+ * Wave 2.7 — convert an AHK layer-flag variable name (`g_LayerVimArrows`) back
+ * to the canonical layerName (`vim-arrows`). Returns null if the name doesn't
+ * match the expected pattern or the recovered layerName fails the schema regex.
+ */
+function layerNameFromAhkVar(varName: string): string | null {
+  const m = varName.match(/^g_Layer(.+)$/);
+  if (!m) return null;
+  const pascal = m[1];
+  // PascalCase → kebab-case: prepend a dash before every uppercase, lowercase,
+  // then strip any leading dash.
+  const kebab = pascal.replace(/([A-Z])/g, '-$1').toLowerCase().replace(/^-/, '');
+  if (kebab.length === 0 || kebab.length > 32) return null;
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(kebab)) return null;
+  return kebab;
+}
+
+function parseModifierDownSequence(inner: string): ModifierAction | null {
+  const matches = inner.matchAll(/\{([A-Za-z]+) down\}/g);
+  const mods: Modifier[] = [];
+  for (const m of matches) {
+    const mapped = AHK_VK_TO_MODIFIER[m[1].toLowerCase()];
+    if (!mapped) return null;
+    mods.push(mapped);
+  }
+  if (mods.length === 0) return null;
+  return {
+    kind: 'modifier',
+    modifiers: canonicaliseModifiers(mods),
+  };
+}
+
 const HOTIF_RX = /^#HotIf\s+WinActive\(["']ahk_exe\s+([^"')]+)["']\)/i;
 const HOTIF_BARE_RX = /^#HotIf\s*$/i;
+/**
+ * Wave 2.7 — `#HotIf g_LayerXxx` (layer scope, no app condition) and
+ * `#HotIf g_LayerXxx && WinActive("ahk_exe X.exe")` (layer + per-app scope).
+ * The PascalCase layer-variable suffix encodes the kebab layerName.
+ */
+const HOTIF_LAYER_ONLY_RX = /^#HotIf\s+(g_Layer\w+)\s*$/i;
+const HOTIF_LAYER_AND_APP_RX =
+  /^#HotIf\s+(g_Layer\w+)\s*&&\s*WinActive\(["']ahk_exe\s+([^"')]+)["']\)/i;
+/**
+ * Layer activator (down) and its release partner. The down line carries the
+ * description; the up line is informational.
+ *   Hold:    `*CapsLock:: { global g_LayerVimArrows := true }  ; Caps Lock vim arrows (layer on)`
+ *   One-shot:`*CapsLock:: { global g_LayerVimArrows := true ; SetTimer(...) }  ; ... (one-shot on)`
+ *
+ * The optional `; SetTimer(...)` group is consumed by the regex (Wave 2.8)
+ * so a timeout-bearing one-shot activator still matches. Mode (hold vs
+ * one-shot) is detected separately via the description suffix `(one-shot on)`
+ * or the presence of the SetTimer block.
+ */
+const LAYER_ACTIVATOR_DOWN_RX =
+  /^\*(\S+?)::\s*\{\s*global\s+(g_Layer\w+)\s*:=\s*true(?:\s*;\s*SetTimer\([^}]*?,\s*-(\d+)\s*\))?\s*\}\s*(?:;(.*))?$/i;
+const LAYER_ACTIVATOR_UP_RX =
+  /^\*(\S+?)\s+up::\s*\{\s*global\s+g_Layer\w+\s*:=\s*false\s*\}/i;
+/**
+ * Wave 2.8 — one-shot child handler:
+ *   `h:: { Send("{Left}") ; global g_LayerVimArrows := false }  ; Caps tap then H → Left`
+ * Captures: 1=trigger, 2=action, 3=layer-var, 4=description.
+ */
+const ONESHOT_CHILD_RX =
+  /^(\S+?)::\s*\{\s*Send\(\s*["']([^"']*)["']\s*\)\s*;\s*global\s+(g_Layer\w+)\s*:=\s*false\s*\}\s*(?:;(.*))?$/;
+/** One-shot cancel-key handler: `Escape:: { global g_LayerXxx := false }`. Discarded on import (cancelKeys defaults to ['escape']). */
+const ONESHOT_CANCEL_KEY_RX =
+  /^(\S+?)::\s*\{\s*global\s+g_Layer\w+\s*:=\s*false\s*\}\s*(?:;.*)?$/;
 /**
  * Matches a HotkeySync-emitted global-with-exceptions directive, e.g.
  *   `#HotIf !(WinActive("ahk_exe a.exe") || WinActive("ahk_exe b.exe"))`
@@ -212,6 +315,10 @@ export function parseAHK(source: string): AHKImportResult {
   //                              the exclusion list to attach to each rule
   let currentAppId: string | null = GLOBAL_APP_ID;
   let currentExceptApps: string[] | null = null;
+  // Wave 2.7 — when inside a `#HotIf g_LayerXxx [...]` block, child basic
+  // rules gain `layerName: currentLayerName`. Reset on bare `#HotIf` or any
+  // non-layer `#HotIf` directive.
+  let currentLayerName: string | null = null;
   const lines = source.split(/\r?\n/);
 
   for (let idx = 0; idx < lines.length; idx++) {
@@ -219,6 +326,66 @@ export function parseAHK(source: string): AHKImportResult {
     const line = raw.trim();
     if (line.length === 0) continue;
     if (line.startsWith(';')) continue;
+
+    // Wave 2.7 — `#HotIf g_LayerXxx && WinActive(...)` (layer + app scope).
+    const hotIfLayerApp = line.match(HOTIF_LAYER_AND_APP_RX);
+    if (hotIfLayerApp) {
+      const [, varName, exe] = hotIfLayerApp;
+      const layerName = layerNameFromAhkVar(varName);
+      const appId = EXE_LOOKUP.get(exe.toLowerCase());
+      if (!layerName) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: `Could not extract a layerName from "${varName}".`,
+        });
+        currentAppId = null;
+        currentLayerName = null;
+        currentExceptApps = null;
+        continue;
+      }
+      if (!appId) {
+        if (!unknownAppExes.includes(exe)) unknownAppExes.push(exe);
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: `Unknown exeName "${exe}" inside layer block — rules will be skipped.`,
+        });
+        currentAppId = null;
+        currentLayerName = layerName;
+        currentExceptApps = null;
+        continue;
+      }
+      currentAppId = appId;
+      currentLayerName = layerName;
+      currentExceptApps = null;
+      if (!seenApps.has(appId)) {
+        seenApps.add(appId);
+        selectedOrder.push(appId);
+      }
+      continue;
+    }
+
+    // Wave 2.7 — `#HotIf g_LayerXxx` (layer scope, global app).
+    const hotIfLayerOnly = line.match(HOTIF_LAYER_ONLY_RX);
+    if (hotIfLayerOnly) {
+      const layerName = layerNameFromAhkVar(hotIfLayerOnly[1]);
+      if (!layerName) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: `Could not extract a layerName from "${hotIfLayerOnly[1]}".`,
+        });
+        currentAppId = null;
+        currentLayerName = null;
+        currentExceptApps = null;
+        continue;
+      }
+      currentAppId = GLOBAL_APP_ID;
+      currentLayerName = layerName;
+      currentExceptApps = null;
+      continue;
+    }
 
     // #HotIf WinActive(...)
     const hotIfMatch = line.match(HOTIF_RX);
@@ -238,6 +405,7 @@ export function parseAHK(source: string): AHKImportResult {
       }
       currentAppId = appId;
       currentExceptApps = null;
+      currentLayerName = null;
       if (!seenApps.has(appId)) {
         seenApps.add(appId);
         selectedOrder.push(appId);
@@ -261,6 +429,7 @@ export function parseAHK(source: string): AHKImportResult {
       }
       currentAppId = GLOBAL_APP_ID;
       currentExceptApps = exes.length > 0 ? exes : null;
+      currentLayerName = null;
       if (!seenApps.has(GLOBAL_APP_ID)) {
         seenApps.add(GLOBAL_APP_ID);
         selectedOrder.push(GLOBAL_APP_ID);
@@ -279,12 +448,175 @@ export function parseAHK(source: string): AHKImportResult {
       // Resetting #HotIf means "back to global scope".
       currentAppId = GLOBAL_APP_ID;
       currentExceptApps = null;
+      currentLayerName = null;
       continue;
     }
 
     // Skip directives (#Requires, #SingleInstance, #Include, …), but NOT rule
     // lines whose trigger uses the `#` (meta/Win) modifier — those contain `::`.
     if (line.startsWith('#') && !line.includes('::')) continue;
+
+    // Wave 2.7 — layer activator (down) and its release partner. Both start
+    // with `*` like the Wave 2.6 modifier-down pattern, so probe these first.
+    if (LAYER_ACTIVATOR_UP_RX.test(line)) {
+      continue;
+    }
+    const layerActivatorMatch = line.match(LAYER_ACTIVATOR_DOWN_RX);
+    if (layerActivatorMatch) {
+      const [, laTriggerExpr, laVarName, laTimeoutMs, laDescriptionRaw] =
+        layerActivatorMatch;
+      // Wave 2.8 — detect one-shot via either a captured SetTimer timeout OR
+      // the description suffix our generator emits. Hold layers keep their
+      // current default.
+      const laDescriptionRawTrimmed = (laDescriptionRaw ?? '').trim();
+      const isOneShot =
+        laTimeoutMs !== undefined ||
+        /\(one-shot on\)\s*$/i.test(laDescriptionRawTrimmed);
+      const laDescription = laDescriptionRawTrimmed
+        .replace(/\s*\(one-shot on\)\s*$/i, '')
+        .replace(/\s*\(layer on\)\s*$/i, '')
+        .trim();
+      const laTrigger = parseAHKKeyExpression(laTriggerExpr);
+      const laLayerName = layerNameFromAhkVar(laVarName);
+      if (!laTrigger || !laLayerName) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: `Could not parse layer activator "${line}".`,
+        });
+        continue;
+      }
+      if (currentAppId === null) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: 'layer activator inside an unresolved-app #HotIf block — skipped.',
+        });
+        continue;
+      }
+      const laAppId = currentAppId;
+      if (!seenApps.has(laAppId)) {
+        seenApps.add(laAppId);
+        selectedOrder.push(laAppId);
+      }
+      const layerRule: LayerHotkeyRule = {
+        kind: 'layer',
+        appId: laAppId,
+        trigger: laTrigger.combo,
+        layerName: laLayerName,
+        mode: isOneShot ? 'oneshot' : 'hold',
+        description: laDescription.length > 0 ? laDescription : 'Imported layer',
+      };
+      if (isOneShot && laTimeoutMs !== undefined) {
+        const ms = Number.parseInt(laTimeoutMs, 10);
+        if (Number.isFinite(ms) && ms >= 100 && ms <= 10_000) {
+          layerRule.oneshotTimeoutMs = ms;
+        }
+      }
+      if (currentExceptApps) {
+        (layerRule as LayerHotkeyRule & { exceptApps?: string[] }).exceptApps =
+          currentExceptApps;
+      }
+      rules.push(layerRule);
+      continue;
+    }
+
+    // Wave 2.8 — one-shot child handler `<trigger>:: { Send("...") ; global g_LayerXxx := false }`.
+    // Must run BEFORE the regular RULE_RX since both can match the trigger
+    // prefix. We don't need to do anything special with the layer var name —
+    // currentLayerName (set by the surrounding #HotIf) is the source of truth.
+    const oneShotChildMatch = line.match(ONESHOT_CHILD_RX);
+    if (oneShotChildMatch) {
+      const [, oscTriggerExpr, oscActionExpr, , oscDescriptionRaw] =
+        oneShotChildMatch;
+      const oscDescription = (oscDescriptionRaw ?? '').trim();
+      const oscTrigger = parseAHKKeyExpression(oscTriggerExpr);
+      const oscAction = parseAHKKeyExpression(oscActionExpr);
+      if (!oscTrigger || !oscAction) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: `Could not parse one-shot child "${line}".`,
+        });
+        continue;
+      }
+      if (currentAppId === null) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: 'one-shot child inside an unresolved-app #HotIf block — skipped.',
+        });
+        continue;
+      }
+      const oscAppId = currentAppId;
+      if (!seenApps.has(oscAppId)) {
+        seenApps.add(oscAppId);
+        selectedOrder.push(oscAppId);
+      }
+      rules.push({
+        kind: 'basic',
+        appId: oscAppId,
+        trigger: oscTrigger.combo,
+        action: oscAction.combo,
+        description: oscDescription.length > 0 ? oscDescription : 'Imported from AHK',
+        ...(currentExceptApps ? { exceptApps: currentExceptApps } : {}),
+        ...(currentLayerName ? { layerName: currentLayerName } : {}),
+      });
+      continue;
+    }
+
+    // Wave 2.8 — cancel-key inside a one-shot layer: `Escape:: { global g_LayerXxx := false }`.
+    // Discarded on import — the layer's cancelKeys field carries this back on
+    // a future round-trip. We only enter this branch when inside a layer
+    // scope (currentLayerName !== null) to avoid mis-eating hand-written code.
+    if (currentLayerName && ONESHOT_CANCEL_KEY_RX.test(line)) {
+      continue;
+    }
+
+    // Wave 2.6 — modifier-down line (`*Trigger::Send "{Blind}{LCtrl down}…"`).
+    // Must run BEFORE the basic RULE_RX since both can match. The matching
+    // `up` line is discarded; the down line fully describes the rule.
+    if (MODIFIER_UP_RULE_RX.test(line)) {
+      continue;
+    }
+    const modifierDownMatch = line.match(MODIFIER_DOWN_RULE_RX);
+    if (modifierDownMatch) {
+      const [, modTriggerExpr, modDownStr, modDescriptionRaw] = modifierDownMatch;
+      const modDescription = (modDescriptionRaw ?? '').trim();
+      if (currentAppId === null) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: 'modifier-action rule inside an unresolved-app #HotIf block — skipped.',
+        });
+        continue;
+      }
+      const modTrigger = parseAHKKeyExpression(modTriggerExpr);
+      const modAction = parseModifierDownSequence(modDownStr);
+      if (!modTrigger || !modAction) {
+        warnings.push({
+          line: idx + 1,
+          text: raw,
+          reason: `Could not parse modifier-action rule "${line}".`,
+        });
+        continue;
+      }
+      const modAppId = currentAppId;
+      if (!seenApps.has(modAppId)) {
+        seenApps.add(modAppId);
+        selectedOrder.push(modAppId);
+      }
+      rules.push({
+        kind: 'basic',
+        appId: modAppId,
+        trigger: modTrigger.combo,
+        action: modAction,
+        description: modDescription.length > 0 ? modDescription : 'Imported from AHK',
+        ...(currentExceptApps ? { exceptApps: currentExceptApps } : {}),
+        ...(currentLayerName ? { layerName: currentLayerName } : {}),
+      });
+      continue;
+    }
 
     // Try disable pattern (`Trigger:: return`) before basic — both contain `::`.
     const disableMatch = line.match(DISABLE_RULE_RX);
@@ -336,8 +668,17 @@ export function parseAHK(source: string): AHKImportResult {
       const thDescription = (thDescriptionRaw ?? '').trim();
       const thTrigger = parseAHKKeyExpression(thTriggerExpr);
       const thTap = parseAHKKeyExpression(thTapExpr);
-      const thHold = parseAHKKeyExpression(thHoldExpr);
-      if (!thTrigger || !thTap || !thHold) {
+      // Wave 2.6 — hold action may be a key combo OR a modifier-down sequence
+      // emitted by our generator (e.g. `{LControl down}` for Caps Lock=Ctrl).
+      let thHoldAction: import('@/types').Action | null;
+      const modifierHold = parseModifierDownSequence(thHoldExpr);
+      if (modifierHold) {
+        thHoldAction = modifierHold;
+      } else {
+        const parsed = parseAHKKeyExpression(thHoldExpr);
+        thHoldAction = parsed ? parsed.combo : null;
+      }
+      if (!thTrigger || !thTap || !thHoldAction) {
         warnings.push({
           line: idx + 1,
           text: raw,
@@ -376,7 +717,7 @@ export function parseAHK(source: string): AHKImportResult {
         appId: thAppId,
         trigger: thTrigger.combo,
         tapAction: thTap.combo,
-        holdAction: thHold.combo,
+        holdAction: thHoldAction,
         tapTimeoutMs: clamped,
         description: thDescription.length > 0 ? thDescription : 'Imported from AHK',
         ...(currentExceptApps ? { exceptApps: currentExceptApps } : {}),
@@ -430,6 +771,7 @@ export function parseAHK(source: string): AHKImportResult {
       action: actionCombo.combo,
       description: description.length > 0 ? description : 'Imported from AHK',
       ...(currentExceptApps ? { exceptApps: currentExceptApps } : {}),
+      ...(currentLayerName ? { layerName: currentLayerName } : {}),
     });
   }
 

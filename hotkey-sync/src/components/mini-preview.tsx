@@ -6,6 +6,7 @@ import { useConfigStore } from '@/store/useConfigStore';
 import appsData from '@/data/apps.json';
 import { Badge } from '@/components/ui/badge';
 import { KeyBadge } from '@/components/key-badge';
+import { ActionBadge } from '@/components/action-badge';
 import type { App, HotkeyRule } from '@/types';
 
 const APPS = appsData as App[];
@@ -65,11 +66,35 @@ export function MiniPreview(): React.JSX.Element {
                             aria-hidden="true"
                           />
                           {r.kind === 'basic' ? (
-                            <KeyBadge combo={r.action} size="sm" />
+                            <>
+                              <ActionBadge action={r.action} size="sm" />
+                              {r.layerName && (
+                                <span
+                                  className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                                  data-testid="layer-child-tag"
+                                >
+                                  in “{r.layerName}”
+                                </span>
+                              )}
+                            </>
                           ) : r.kind === 'tap_hold' ? (
                             <span className="inline-flex flex-col gap-0.5 text-[10px] text-muted-foreground">
                               <span>tap: <KeyBadge combo={r.tapAction} size="sm" /></span>
-                              <span>hold: <KeyBadge combo={r.holdAction} size="sm" /></span>
+                              <span>hold: <ActionBadge action={r.holdAction} size="sm" /></span>
+                            </span>
+                          ) : r.kind === 'layer' ? (
+                            <span
+                              className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                              data-testid="layer-rule-summary"
+                            >
+                              {r.mode === 'oneshot' ? 'one-shot layer' : 'layer'} “{r.layerName}”
+                              {r.tapAction !== undefined && (
+                                <>
+                                  {' (tap → '}
+                                  <ActionBadge action={r.tapAction} size="sm" />
+                                  {')'}
+                                </>
+                              )}
                             </span>
                           ) : (
                             <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
