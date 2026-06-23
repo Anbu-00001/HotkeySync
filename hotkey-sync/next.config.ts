@@ -20,9 +20,15 @@ import type { NextConfig } from 'next';
 // Safari 16+, Firefox 121+ that allows WebAssembly without permitting
 // generic JavaScript eval(). Older browsers fail closed — CodePreview's
 // fallback in `code-preview.tsx` renders plain text in that case.
+//
+// `'unsafe-eval'` is added in development ONLY: React's dev runtime uses
+// eval() to reconstruct server-side error stacks in the browser. Production
+// builds neither React nor Next call eval(). Per the official Next 16 CSP
+// guide (`node_modules/next/dist/docs/01-app/02-guides/content-security-policy.md`).
+const isDev = process.env.NODE_ENV === 'development';
 const cspDirectives = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",

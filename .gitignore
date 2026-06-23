@@ -1,0 +1,12 @@
+# Claude Code per-workspace settings — local to each contributor.
+.claude/
+
+# Workspace-root node_modules (the real project lives in hotkey-sync/ which
+# has its own .gitignore for /node_modules; this catches anything that ever
+# gets installed at the workspace root by mistake).
+node_modules/
+
+# Agent working memory. The canonical copies live in
+# ~/.claude/projects/-home-anbu-26-class-HotkeySync/memory/ and are
+# per-developer scratch notes, not project documentation.
+docs/agent-memory/
